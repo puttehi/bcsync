@@ -1,0 +1,6 @@
+.env
+build
+dist
+known_duplicates.db*
+**/*.spec
+**/*.log
