@@ -49,7 +49,7 @@ def read_args() -> Tuple[argparse.Namespace, int]:
     parser.add_argument(
         "-c",
         "--check",
-        help="WIP: Check header information only. Only path and basename is currently supported.",
+        help="Only print replay info",
         action="store_true",
     )
     parser.add_argument(
@@ -96,13 +96,6 @@ class Replay:
     def __init__(self, path=""):
         self.path = path
         self.basename = os.path.basename(self.path)
-        self.header_length = -1
-        self.header_crc = -1
-        self.engine_version = -1
-        self.licensee_version = -1
-        self.net_version = -1
-        self.tagame_replay_soccar_ta = ""
-        self.properties: dict = {}
         self.duplicate = self.basename in self.known_duplicates
 
     @staticmethod
@@ -118,111 +111,9 @@ class Replay:
     known_duplicates = read_known_duplicates()
 
 
-def read_int32(f) -> bytes:
-    return f.read(4)
-
-
-def read_int64(f) -> bytes:
-    return f.read(8)
-
-
-def read_uint32(f) -> bytes:
-    return f.read(4)
-
-
-def read_string(f) -> bytes:
-    length = int.from_bytes(read_int32(f), "little")
-    # ascii cp1252 if length over 0
-    if length > 0:
-        str_bytes = f.read(length)
-        try:
-            decoded = str_bytes.decode("cp1252")
-        except Exception as e:
-            print(length)
-            print(str_bytes)
-            raise e
-        return decoded[:-1]  # omit null terminator
-    # unicode if length is under 0.
-    elif length < 0:
-        # no idea what the minus magic is..
-        str_len = length * -2
-        str_bytes = f.read(str_len)
-        try:
-            decoded = str_bytes.decode("utf-8")
-        except Exception as e:
-            print(str_len)
-            print(str_bytes)
-            raise e
-        return decoded[: str_len - 2]
-    return ""
-
-
-def read_value(f, t: str):
+def read_replay(filepath: str) -> Replay:
     """TODO"""
-    v = None
-    match t:
-        case b"IntProperty":
-            v = int.from_bytes(read_int32(f), "little")
-        case b"StrProperty" | b"NameProperty":
-            v = read_string(f)
-        case b"FloatProperty":
-            v = struct.unpack("f", read_int32(f))
-        case b"ByteProperty":
-            v = "TODO"
-            raise NotImplementedException("todo")
-        case b"BoolProperty":
-            v = bool(f.read(1))
-        case b"QWordProperty":
-            v = read_int64(f)
-        case b"ArrayProperty":
-            count = int.from_bytes(read_int32(f), "little")
-            v: List[dict] = []  # list of properties, recursion!
-            for _ in range(count):
-                props = read_properties(f)
-                v.append(props)
-    return v
-
-
-def read_properties(f) -> dict:
-    """TODO"""
-    name = ""
-    props = {}
-    i = 0
-    while name != "None":
-        name = read_string(f)
-        if name == "None":
-            return props
-        p = {"name": name}
-        p["type"] = read_string(f)
-        p["data_length"] = int.from_bytes(read_int32(f), "little")
-        p["unknown"] = int.from_bytes(read_int32(f), "little")
-        p["value"] = read_value(f, p["type"])
-        props[name] = p
-        if i > 3:
-            print(props)
-            raise Exception("Too many iterations")
-        i += 1
-
-    return props
-
-
-def read_replay(filepath: str, deserialize=False) -> Replay:
-    """TODO"""
-    replay = Replay(filepath)
-    if deserialize == False:
-        return replay
-
-    with open(filepath, "rb") as f:
-        replay.header_length = int.from_bytes(read_int32(f), "little")
-        replay.header_crc = int.from_bytes(read_uint32(f), "little")
-        replay.engine_version = int.from_bytes(read_uint32(f), "little")
-        replay.licensee_version = int.from_bytes(read_uint32(f), "little")
-        if replay.engine_version >= 868 and replay.licensee_version >= 18:
-            replay.net_version = int.from_bytes(read_uint32(f), "little")
-        replay.tagame_replay_soccar_ta = str(read_string(f))
-        replay.properties = read_properties(f)
-
-    return replay
+    return Replay(filepath)
 
 
 def upload_replay(
