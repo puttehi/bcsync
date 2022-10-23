@@ -97,6 +97,52 @@ class Replay:
         self.path = path
         self.basename = os.path.basename(self.path)
         self.duplicate = self.basename in self.known_duplicates
+        self.visibility = "private"
+        self.ballchasing_id = ""
+        self.upload_result = ""
+        self.upload_json = {}
+
+    def upload(
+        self, session: requests.Session, verbosity: int = 0
+    ) -> Union[Literal["success"], Literal["old_duplicate"], Literal["new_duplicate"]]:
+        """Upload the replay to ballchasing.com.
+        Returns:
+            "duplicate": if previously uploaded
+            "success": if a new upload was successful
+        Raises:
+            Exception: When upload was not successful or a duplicate"""
+        if self.duplicate:
+            if verbosity > 0:
+                print(f"Skipping known duplicate: {self.basename}")
+            return "old_duplicate"
+
+        file_ = {"file": open(self.path, "rb")}
+
+        upload = session.post(
+            self.upload_url_base + "?visibility=" + self.visibility, files=file_
+        )
+
+        if upload.status_code == 201:
+            # replay successfully created, return it's id
+            self.upload_json = upload.json()
+            id = self.upload_json["id"]
+            self.ballchasing_id = id
+            self.upload_result = "success"
+            if verbosity > 0:
+                print(f"Upload successful. Replay ID: {id}")
+            return "success"
+        elif upload.status_code == 409:  # duplicate replay
+            # you have the choice: either raise an error, or return the existing replay id
+            self.upload_json = upload.json()
+            id = self.upload_json["id"]
+            self.ballchasing_id = id
+            self.upload_result = "duplicate"
+            if verbosity > 0:
+                print(f"Duplicate replay found. Replay ID: {id}")
+            return "new_duplicate"
+        else:
+            # raise an error for other status codes (50x, ...)
+            raise Exception(json.dumps(upload.json()))
 
     @staticmethod
     def read_known_duplicates() -> List[str]:
@@ -109,40 +155,12 @@ class Replay:
             return []
 
     known_duplicates = read_known_duplicates()
+    upload_url_base = "https://ballchasing.com/api/v2/upload"
 
 
 def read_replay(filepath: str) -> Replay:
     """TODO"""
     return Replay(filepath)
-
-
-def upload_replay(
-    s: requests.Session, replay_path: str, verbosity: int = 0
-) -> Tuple[Union[Literal["success"], Literal["duplicate"]], Dict[str, Any]]:
-    """TODO"""
-    visibility = "private"  # public
-    upload_url = f"https://ballchasing.com/api/v2/upload?visibility={visibility}"
-    file_ = {"file": open(replay_path, "rb")}
-
-    upload = s.post(upload_url, files=file_)
-
-    if upload.status_code == 201:
-        # replay successfully created, return it's id
-        j = upload.json()
-        id = j["id"]
-        if verbosity > 0:
-            print(f"Upload successful. Replay ID: {id}")
-        return "success", j
-    elif upload.status_code == 409:  # duplicate replay
-        # you have the choice: either raise an error, or return the existing replay id
-        j = upload.json()
-        id = j["id"]
-        if verbosity > 0:
-            print(f"Duplicate replay found. Replay ID: {id}")
-        return "duplicate", j
-    else:
-        # raise an error for other status codes (50x, ...)
-        raise Exception(json.dumps(upload.json()))
 
 
 def main() -> int:
@@ -187,6 +205,8 @@ def main() -> int:
     assert (
         ping.status_code == 200
     ), f"API health check did not return 200: {ping.status_code}"
+    if args.verbosity > 1:
+        print("API health check OK")
 
     # parse files to upload
     replays = []
@@ -199,38 +219,41 @@ def main() -> int:
             replays.append(read_replay(filepath))
 
     # upload
-    results: Dict[str, List[Dict[str, Any]]] = {"duplicate": [], "success": []}
-    new_duplicates_count = 0
-    old_duplicates_count = 0
     for replay in replays:
-        if should_upload:
-            if replay.duplicate:
-                # old duplicate
-                if args.verbosity > 0:
-                    print(f"Skipping known duplicate: {replay.basename}")
-                key, value = "duplicate", replay
-                results[key].append(value)
-                old_duplicates_count += 1
-                continue
-            key, value = upload_replay(s, replay.path, args.verbosity)
-            results[key].append(value)
-            if key == "duplicate":
-                # new duplicate
-                with open("known_duplicates.db", "a") as f:
-                    f.write(replay.basename + "\n")
-                new_duplicates_count += 1
-        else:
+        if not should_upload:
+            # --check so just print the attributes of the replays
             print(f"{'8<':-^20}")
             print(vars(replay))
             print(f"{'>8':-^20}")
+            continue
+
+        result = replay.upload(s, args.verbosity)
+        if result == "success" or result == "new_duplicate":
+            # Success: So we know next time it is a duplicate
+            # New duplicate: Well, it's a new duplicate
+            with open("known_duplicates.db", "a") as f:
+                f.write(replay.basename + "\n")
 
     if should_upload:
-        if args.verbosity > 0:
-            print(results)
-        success_count = len(results.get("success", []))
-        total_duplicates_count = len(results.get("duplicate", []))
-        replay_path = path_smart_truncate(env["REPLAY_PATH"])
+        if args.verbosity > 1:
+            print([replay.upload_json for replay in replays])
+        replay_path = truncate_path_between(env["REPLAY_PATH"])
         timestamp = datetime.datetime.now()
+        success_count = 0
+        old_duplicates_count = 0
+        new_duplicates_count = 0
+        for replay in replays:
+            if replay.upload_result == "":
+                if replay.duplicate is True:
+                    old_duplicates_count += 1
+            else:
+                if replay.duplicate is True:
+                    new_duplicates_count += 1
+                else:
+                    success_count += 1
+        total_duplicates_count = old_duplicates_count + new_duplicates_count
+        total_replay_count = total_duplicates_count + success_count
+
         # TODO: Report ID and path of new uploads and duplicates
         print(
             tabulate(
@@ -245,25 +268,41 @@ def main() -> int:
                 ]
             )
         )
+        result_map = {
+            "success": "New: ",
+            "duplicate": "New duplicate: ",
+        }
 
+        print(
+            tabulate(
+                [
+                    (
+                        truncate_string(replay.basename, 8 + 3),
+                        result_map.get(replay.upload_result) + replay.ballchasing_id,
+                    )
+                    for replay in replays
+                    if replay.upload_result != ""
+                ]
+            )
+        )
     # clean up dupe file of dupes in case we got any
     duplicates = set()
     with open("known_duplicates.db", "r") as f:
         lines = f.readlines()
         for l in lines:
             duplicates.add(l)
-        if args.verbosity > 0:
+        if args.verbosity > 1:
             print(f"Cleaning up known_duplicates.db: {lines}")
     with open("known_duplicates.db", "w") as f:
         for d in duplicates:
             f.write(d + "\n")
-        if args.verbosity > 0:
+        if args.verbosity > 1:
             print(f"Wrote duplicates to known_duplicates.db: {str(duplicates)}")
 
     return exit_code
 
 
-def path_smart_truncate(input_path: str, start_length=3, end_length=2) -> str:
+def truncate_path_between(input_path: str, start_length=3, end_length=2) -> str:
     """Truncate long paths from the middle.
 
     /home/user/some/long/path/to/somewhere/far/away
@@ -278,6 +317,12 @@ def path_smart_truncate(input_path: str, start_length=3, end_length=2) -> str:
         return input_path
 
     return "/".join(parts[:start_length]) + "/.../" + "/".join(parts[-end_length:])
+
+
+def truncate_string(string: str, length=24) -> str:
+    """Truncate string with dots. `length` includes dots."""
+    end = "..."
+    return string[: min(length, len(string)) - len(end)] + end
 
 
 if __name__ == "__main__":
