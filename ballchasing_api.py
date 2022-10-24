@@ -50,12 +50,14 @@ def upload_replay(
         result["result"] = "success"
         result["id"] = result["json"]["id"]
         if Config.verbosity > 0:
-            print(f"Upload successful. Replay ID: {id}")
+            id_ = result["id"]
+            print(f"Upload successful. Replay ID: {id_}")
     # existing duplicate found
     elif upload.status_code == 409:
         result["result"] = "duplicate"
         result["id"] = result["json"]["id"]
         if Config.verbosity > 0:
-            print(f"Duplicate replay found. Replay ID: {id}")
+            id_ = result["id"]
+            print(f"Duplicate replay found. Replay ID: {id_}")
 
     return result
