@@ -111,13 +111,13 @@ def read_env(filepath: str | None) -> Dict[str, str]:
 
 
 def create_header_table(
-    replays: List[Replay], replay_path: str
+    replays: List[Replay],
 ) -> Tuple[str, int, int, datetime.datetime]:
     """Create header table containing
     - Timestamp
     - Replay path
     - Upload/duplicate counts"""
-    replay_path = truncate_path_between(replay_path)
+    replay_path = truncate_path_between(Config.replay_path)
     timestamp = datetime.datetime.now()
     success_count = len([r for r in replays if r.upload_result == "success"])
     old_duplicates_count = len(
@@ -164,13 +164,13 @@ def create_result_table(replays: List[Replay]) -> str:
 
 
 def build_table_strings(
-    replays: List[Replay], replay_path: str
+    replays: List[Replay],
 ) -> Tuple[List[str], int, int, datetime.datetime]:
     """Print results tabulate and return the printed string."""
     if Config.verbosity > 1:
         print([replay.upload_json for replay in replays])
 
-    header, successes, new, timestamp = create_header_table(replays, replay_path)
+    header, successes, new, timestamp = create_header_table(replays)
     tables = [header, create_result_table(replays)]
     return tables, successes, new, timestamp
 
@@ -231,7 +231,6 @@ def main() -> int:
     )
     Config.set_duplicates_file(os.path.join(SCRIPT_PATH, "known_duplicates.db"))
 
-    _replay_path = Config.replay_path
     if Config.verbosity > 0:
         print(f"config={str(vars(Config))}")
         print(f"{env=}")
@@ -284,10 +283,7 @@ def main() -> int:
                 success_count,
                 new_duplicates_count,
                 timestamp,
-            ) = build_table_strings(
-                replays=replays,
-                replay_path=Config.replay_path,
-            )
+            ) = build_table_strings(replays=replays)
             print(tables[0])  # header for run
 
             if success_count > 0 or new_duplicates_count > 0:
@@ -339,7 +335,7 @@ def write_session_log() -> None:
     # print(next_index)
     # print(log_file)
     with open(log_file, "w") as f:
-        header, s, n, timestamp = create_header_table(_replays, _replay_path)
+        header, s, n, timestamp = create_header_table(_replays)
         session_report = header + "\n" + _session_log
         written_bytes = append_to_file(filepath=log_file, text=session_report)
         print(session_report)
@@ -359,7 +355,6 @@ def main_wrapper() -> int:
 
 _session_log: str = ""
 _replays: List[Replay] = []
-_replay_path: str = ""
 
 if __name__ == "__main__":
     sys.exit(main_wrapper())
