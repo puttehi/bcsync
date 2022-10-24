@@ -256,7 +256,7 @@ def main() -> int:
             for r in find_files_endswith(dirpath=Config.replay_path, ending=".replay")
         ]
         _replays = replays  # cache for logging
-
+        status_length = 36
         # upload
         for replay in replays:
             if args.check:
@@ -264,7 +264,15 @@ def main() -> int:
                 print_replay_attributes(replay)
                 continue
 
+            basename = replay.basename
+            if Config.verbosity == 0:
+                response_log = f"Out: {basename}"
+                print(truncate_string(response_log, status_length), end="\r")
             result = replay.upload(s)
+            if Config.verbosity > 0 and result != "old_duplicate":
+                response_log = f"In: {result} {basename}\n"
+                print(truncate_string(response_log, status_length))
+
             if result == "success" or result == "duplicate":
                 # Success: So we know next time it is a duplicate
                 # New duplicate: Well, it's a new duplicate
@@ -284,7 +292,7 @@ def main() -> int:
 
             if success_count > 0 or new_duplicates_count > 0:
                 ts = f" {timestamp} "
-                _session_log += f"{ts:-^24}\n"
+                _session_log += f"{ts:-^36}\n"
                 _session_log += f"{tables[1]}\n"
 
             print(_session_log)
