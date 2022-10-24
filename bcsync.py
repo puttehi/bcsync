@@ -12,6 +12,10 @@ from typing import Any, Dict, List, Literal, Tuple, Union
 import requests
 from tabulate import tabulate
 
+from config import Config
+from file_handlers import (append_to_file, find_files_endswith,
+                           remove_duplicate_lines_from_file)
+
 __version__ = ""
 with open("pyproject.toml", "r") as f:
     while not "[tool.poetry]" in f.readline():
@@ -116,7 +120,7 @@ class Replay:
         self.upload_json = {}
 
     def upload(
-        self, session: requests.Session, verbosity: int = 0
+        self, session: requests.Session
     ) -> Union[Literal["success"], Literal["old_duplicate"], Literal["new_duplicate"]]:
         """Upload the replay to ballchasing.com.
         Returns:
@@ -125,7 +129,7 @@ class Replay:
         Raises:
             Exception: When upload was not successful or a duplicate"""
         if self.duplicate:
-            if verbosity > 0:
+            if Config.verbosity > 0:
                 print(f"Skipping known duplicate: {self.basename}")
             return "old_duplicate"
 
@@ -141,7 +145,7 @@ class Replay:
             id = self.upload_json["id"]
             self.ballchasing_id = id
             self.upload_result = "success"
-            if verbosity > 0:
+            if Config.verbosity > 0:
                 print(f"Upload successful. Replay ID: {id}")
             return "success"
         elif upload.status_code == 409:  # duplicate replay
@@ -150,7 +154,7 @@ class Replay:
             id = self.upload_json["id"]
             self.ballchasing_id = id
             self.upload_result = "duplicate"
-            if verbosity > 0:
+            if Config.verbosity > 0:
                 print(f"Duplicate replay found. Replay ID: {id}")
             return "new_duplicate"
         else:
@@ -226,37 +230,16 @@ def create_result_table(replays: List[Replay]) -> str:
     )
 
 
-def read_replay(filepath: str) -> Replay:
-    """TODO"""
-    return Replay(filepath)
-
-
 def build_table_strings(
-    replays: List[Replay], replay_path: str, verbosity=0
+    replays: List[Replay], replay_path: str
 ) -> Tuple[List[str], int, int, datetime.datetime]:
     """Print results tabulate and return the printed string."""
-    if verbosity > 1:
+    if Config.verbosity > 1:
         print([replay.upload_json for replay in replays])
 
     header, successes, new, timestamp = create_header_table(replays, replay_path)
     tables = [header, create_result_table(replays)]
     return tables, successes, new, timestamp
-
-
-def clean_duplicates_file(verbosity=0) -> None:
-    """Clean up `DUPLICATES_FILE` from duplicate entries."""
-    duplicates = set()
-    with open(DUPLICATES_FILE, "r") as f:
-        lines = f.readlines()
-        for l in lines:
-            duplicates.add(l)
-        if verbosity > 1:
-            print(f"Cleaning up known_duplicates.db: {lines}")
-    with open(DUPLICATES_FILE, "w") as f:
-        for d in duplicates:
-            f.write(d.rstrip() + "\n")
-        if verbosity > 1:
-            print(f"Wrote duplicates to known_duplicates.db: {str(duplicates)}")
 
 
 def print_replay_attributes(replay: Replay) -> str:
@@ -267,22 +250,6 @@ def print_replay_attributes(replay: Replay) -> str:
     print(printed)
 
     return printed
-
-
-def parse_replays(replay_path: str, recurse=True) -> List[Replay]:
-    """Read replays from `replay_path` to a list of Replays.
-    `replay_path` can be a replay file ending in .replay or
-    a folder to be walked recursively (try `recurse`)."""
-    replays = []
-    # determine if path is a folder or a file
-    if replay_path.endswith(".replay"):
-        replays.append(read_replay(replay_path))
-    else:
-        # root_dir needs a trailing slash (i.e. /root/dir/)
-        for filepath in glob.iglob(replay_path + "**/*.replay", recursive=recurse):
-            replays.append(read_replay(filepath))
-
-    return replays
 
 
 def truncate_path_between(input_path: str, start_length=3, end_length=2) -> str:
@@ -308,31 +275,16 @@ def truncate_string(string: str, length=24) -> str:
     return string[: min(length, len(string)) - len(end)] + end
 
 
-def confirm_env(
-    env: Dict[str, str], opts: List[Dict[str, str]], verbosity=0
-) -> Dict[str, str]:
+def confirm_env(env: Dict[str, str], opts: List[Dict[str, str]]) -> Dict[str, str]:
     confirmed = env.copy()
     for o in opts:
         if confirmed.get(o["key"], None) is None:
             confirmed[o["key"]] = os.getenv(o["key"], "")
         if o["arg"]:
             confirmed[o["key"]] = o["arg"]
-    if verbosity > 1:
+    if Config.verbosity > 1:
         print(confirmed)
     return confirmed
-
-
-def append_to_file(filepath: str, text: str) -> None:
-    """Append `text` to `filepath`.
-    Create the file if it doesn't exist."""
-    try:
-        with open(filepath, "a") as f:
-            f.write(text.rstrip() + "\n")
-    except FileNotFoundError as e:
-        with open(filepath, "w") as f:
-            f.write(text.rstrip() + "\n")
-
-    return
 
 
 def main() -> int:
@@ -343,6 +295,7 @@ def main() -> int:
     global _session_log
     exit_code = 0
     args, exit_code = read_args()
+    Config.set_verbosity(args.verbosity)
     if exit_code != 0:
         return exit_code
 
@@ -359,10 +312,9 @@ def main() -> int:
             {"key": "API_TOKEN", "arg": args.token},
             {"key": "REPLAY_PATH", "arg": args.replay_path},
         ],
-        verbosity=args.verbosity,
     )
     _replay_path = env["REPLAY_PATH"]
-    if args.verbosity > 0:
+    if Config.verbosity > 0:
         print(env)
         print(args)
 
@@ -377,11 +329,14 @@ def main() -> int:
         assert (
             ping.status_code == 200
         ), f"API health check did not return 200: {ping.status_code}"
-        if args.verbosity > 1:
+        if Config.verbosity > 1:
             print("API health check OK")
 
         # parse files to upload
-        replays = parse_replays(env["REPLAY_PATH"])
+        replays = [
+            Replay(r)
+            for r in find_files_endswith(dirpath=env["REPLAY_PATH"], ending=".replay")
+        ]
         _replays = replays  # cache for logging
 
         # upload
@@ -391,7 +346,7 @@ def main() -> int:
                 print_replay_attributes(replay)
                 continue
 
-            result = replay.upload(s, args.verbosity)
+            result = replay.upload(s)
             if result == "success" or result == "new_duplicate":
                 # Success: So we know next time it is a duplicate
                 # New duplicate: Well, it's a new duplicate
@@ -406,7 +361,6 @@ def main() -> int:
             ) = build_table_strings(
                 replays=replays,
                 replay_path=env["REPLAY_PATH"],
-                verbosity=args.verbosity,
             )
             print(tables[0])  # header for run
 
@@ -418,7 +372,9 @@ def main() -> int:
             print(_session_log)
 
         # clean up dupe file of dupes in case we got any
-        clean_duplicates_file(verbosity=args.verbosity)
+        written_bytes = remove_duplicate_lines_from_file(filepath=DUPLICATES_FILE)
+        if Config.verbosity > 1:
+            print(f"Wrote {written_bytes} bytes to duplicates file {DUPLICATES_FILE}")
 
         if tick_rate == 0:
             break
@@ -454,8 +410,9 @@ def write_session_log() -> None:
     # print(log_file)
     with open(log_file, "w") as f:
         header, s, n, timestamp = create_header_table(_replays, _replay_path)
-        written_bytes = f.write(header + "\n" + _session_log)
-        print(_session_log)
+        session_report = header + "\n" + _session_log
+        written_bytes = append_to_file(filepath=log_file, text=session_report)
+        print(session_report)
         print(f"Wrote {written_bytes} bytes to {log_file}")
 
 
