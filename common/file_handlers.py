@@ -19,17 +19,21 @@ def remove_duplicate_lines_from_file(filepath: str) -> int:
         if Config.verbosity > 0:
             print(f"No duplicates to clean as file does not exist: {filepath}")
         return total_bytes_written
+
     with open(filepath, "r") as f:
         lines = f.readlines()
         for l in lines:
             uniques.add(l)
+
     if Config.verbosity > 1:
         print(f"Cleaning up {basename}: {lines}")
-    for u in uniques:
+    uniques_list = list(uniques)
+    total_bytes_written += overwrite_to_file(filepath, uniques_list[0])
+    for u in uniques_list[1:]:
         total_bytes_written += append_to_file(filepath, u)
     if Config.verbosity > 1:
         print(
-            f"Wrote {len(uniques)} unique rows ({total_bytes_written} bytes) to {basename}: {str(uniques)}"
+            f"Wrote {len(uniques_list)} unique rows ({total_bytes_written} bytes) to {basename}: {str(uniques_list)}"
         )
 
     return total_bytes_written
@@ -63,7 +67,18 @@ def append_to_file(filepath: str, text: str) -> int:
         with open(filepath, "a") as f:
             total_bytes = f.write(text.rstrip() + "\n")
     except FileNotFoundError as e:
-        with open(filepath, "w") as f:
-            total_bytes = f.write(text.rstrip() + "\n")
+        total_bytes = overwrite_to_file(filepath=filepath, text=text)
+
+    return total_bytes
+
+
+def overwrite_to_file(filepath: str, text: str) -> int:
+    """Overwrite file content of `filepath` with `text`.
+    Create the file if it doesn't exist.
+    Returns:
+        (int): Total bytes written to `filepath`"""
+    total_bytes = 0
+    with open(filepath, "w") as f:
+        total_bytes = f.write(text.rstrip() + "\n")
 
     return total_bytes
