@@ -275,16 +275,20 @@ def truncate_string(string: str, length=24) -> str:
     return string[: min(length, len(string)) - len(end)] + end
 
 
-def confirm_env(env: Dict[str, str], opts: List[Dict[str, str]]) -> Dict[str, str]:
-    confirmed = env.copy()
-    for o in opts:
-        if confirmed.get(o["key"], None) is None:
-            confirmed[o["key"]] = os.getenv(o["key"], "")
-        if o["arg"]:
-            confirmed[o["key"]] = o["arg"]
-    if Config.verbosity > 1:
-        print(confirmed)
-    return confirmed
+def apply_overrides(suggested: Any, overrides: List[Any]) -> str:
+    """Overrides `suggested` with values from `overrides` in order but skips values that are `None`.
+    Example:
+        `suggested`: "abc"
+        `overrides`: [[], None, "123", {}]
+        returns: {}
+    Returns:
+        (Any): Overriden `suggested`"""
+    forced = suggested
+    for o in overrides:
+        if o is not None:
+            forced = o
+
+    return forced
 
 
 def main() -> int:
@@ -295,9 +299,10 @@ def main() -> int:
     global _session_log
     exit_code = 0
     args, exit_code = read_args()
-    Config.set_verbosity(args.verbosity)
     if exit_code != 0:
         return exit_code
+
+    Config.set_verbosity(args.verbosity)
 
     if args.version == True:
         print(f"* {'bcsync --version:':*^24}")
@@ -306,23 +311,28 @@ def main() -> int:
         return exit_code
 
     env: Dict[str, str] = read_env(args.env)
-    env = confirm_env(
-        env=env,
-        opts=[
-            {"key": "API_TOKEN", "arg": args.token},
-            {"key": "REPLAY_PATH", "arg": args.replay_path},
-        ],
+    Config.set_api_token(
+        apply_overrides(env["API_TOKEN"], [os.getenv("API_TOKEN", None), args.token])
     )
-    _replay_path = env["REPLAY_PATH"]
+    Config.set_replay_path(
+        apply_overrides(
+            env["REPLAY_PATH"], [os.getenv("REPLAY_PATH", None), args.replay_path]
+        ).strip()
+    )
+
+    _replay_path = Config.replay_path
     if Config.verbosity > 0:
-        print(env)
-        print(args)
+        print(f"config={str(vars(Config))}")
+        print(f"{env=}")
+        print(f"{args=}")
 
     # keep headers through session
     s = requests.Session()
-    s.headers.update({"Authorization": env["API_TOKEN"].strip()})
+    s.headers.update({"Authorization": Config.api_token})
 
-    tick_rate = args.watch
+    Config.set_watch(args.watch)
+
+    tick_rate = Config.watch
     while True:
         # health check
         ping = s.get("https://ballchasing.com/api/")
@@ -335,7 +345,7 @@ def main() -> int:
         # parse files to upload
         replays = [
             Replay(r)
-            for r in find_files_endswith(dirpath=env["REPLAY_PATH"], ending=".replay")
+            for r in find_files_endswith(dirpath=Config.replay_path, ending=".replay")
         ]
         _replays = replays  # cache for logging
 
@@ -360,7 +370,7 @@ def main() -> int:
                 timestamp,
             ) = build_table_strings(
                 replays=replays,
-                replay_path=env["REPLAY_PATH"],
+                replay_path=Config.replay_path,
             )
             print(tables[0])  # header for run
 
