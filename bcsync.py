@@ -17,6 +17,7 @@ from common.config import Config
 from common.file_handlers import (append_to_file, find_files_endswith,
                                   remove_duplicate_lines_from_file)
 from common.string_manip import truncate_path_between, truncate_string
+from replay import Replay
 
 __version__ = ""
 with open("pyproject.toml", "r") as f:
@@ -30,7 +31,6 @@ with open("pyproject.toml", "r") as f:
 
 SUCCESS, ERR, ERR_USAGE = 0, 1, 2
 SCRIPT_PATH = os.path.dirname(__file__)
-DUPLICATES_FILE = os.path.join(SCRIPT_PATH, "known_duplicates.db")
 SESSION_LOG_FILE = os.path.join(SCRIPT_PATH, "session.log")
 
 
@@ -108,61 +108,6 @@ def read_env(filepath: str | None) -> Dict[str, str]:
         env[key] = value
 
     return env
-
-
-class Replay:
-    def __init__(self, path=""):
-        self.read_known_duplicates()
-        self.path = path
-        self.basename = os.path.basename(self.path)
-        self.duplicate = self.basename in self.known_duplicates
-        self.visibility = "private"
-        self.ballchasing_id = ""
-        self.upload_result = ""
-        self.upload_json = {}
-
-    def upload(
-        self, session: requests.Session
-    ) -> Union[
-        Literal["success"],
-        Literal["duplicate"],
-        Literal["fail"],
-        Literal["old_duplicate"],
-    ]:
-        """Upload the replay to ballchasing.com.
-        Returns:
-            "old_duplicate": if the replay was already uploaded before
-            "duplicate": if a previously uploaded replay already exists
-            "success": if a new upload was successful
-            "fail": if the upload failed horribly"""
-        if self.duplicate:
-            if Config.verbosity > 0:
-                print(f"Skipping known duplicate: {self.basename}")
-            return "old_duplicate"
-
-        upload_result = ballchasing_api.upload_replay(
-            s=session, file_={"file": open(self.path, "rb")}, visibility=self.visibility
-        )
-
-        self.upload_json = upload_result["json"]
-        self.ballchasing_id = upload_result["id"]
-        self.upload_result = upload_result["result"]
-
-        return self.upload_result
-
-    @classmethod
-    def read_known_duplicates(cls) -> List[str]:
-        try:
-            with open(DUPLICATES_FILE, "r") as f:
-                duplicates = [
-                    l.strip() for l in f.readlines() if l != "\n"
-                ]  # strip newlines from the raw read and disregard line breaks
-                cls.known_duplicates = duplicates
-                return duplicates
-        except FileNotFoundError as e:
-            return []
-
-    known_duplicates: List[str] = []
 
 
 def create_header_table(
@@ -284,6 +229,7 @@ def main() -> int:
             env["REPLAY_PATH"], [os.getenv("REPLAY_PATH", None), args.replay_path]
         ).strip()
     )
+    Config.set_duplicates_file(os.path.join(SCRIPT_PATH, "known_duplicates.db"))
 
     _replay_path = Config.replay_path
     if Config.verbosity > 0:
@@ -322,7 +268,7 @@ def main() -> int:
             if result == "success" or result == "duplicate":
                 # Success: So we know next time it is a duplicate
                 # New duplicate: Well, it's a new duplicate
-                append_to_file(DUPLICATES_FILE, replay.basename)
+                append_to_file(Config.duplicates_file, replay.basename)
 
         if not args.check:
             (
@@ -344,9 +290,13 @@ def main() -> int:
             print(_session_log)
 
         # clean up dupe file of dupes in case we got any
-        written_bytes = remove_duplicate_lines_from_file(filepath=DUPLICATES_FILE)
+        written_bytes = remove_duplicate_lines_from_file(
+            filepath=Config.duplicates_file
+        )
         if Config.verbosity > 1:
-            print(f"Wrote {written_bytes} bytes to duplicates file {DUPLICATES_FILE}")
+            print(
+                f"Wrote {written_bytes} bytes to duplicates file {Config.duplicates_file}"
+            )
 
         if tick_rate == 0:
             break

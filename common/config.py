@@ -9,6 +9,7 @@ class Config:
     watch = 0  # Sleep time ms between loops. 0: Run once only
     api_url = "https://ballchasing.com/api"
     upload_url = f"{api_url}/v2/upload"
+    duplicates_file = "known_duplicates.db"
 
     @classmethod
     def set_verbosity(cls, verbosity: int) -> None:
@@ -25,3 +26,7 @@ class Config:
     @classmethod
     def set_watch(cls, watch: int) -> None:
         cls.watch = watch
+
+    @classmethod
+    def set_duplicates_file(cls, duplicates_file: str) -> None:
+        cls.duplicates_file = duplicates_file
