@@ -4,3 +4,5 @@ dist
 known_duplicates.db*
 **/*.spec
 **/*.log
+*.swp
+__pycache__
