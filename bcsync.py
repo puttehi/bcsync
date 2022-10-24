@@ -348,11 +348,13 @@ def write_session_log() -> None:
 
 def main_wrapper() -> int:
     """Capture exceptions from main to save session logs."""
+    exit_code = 0
     try:
-        return main()
+        exit_code = main()
+        return exit_code
     except KeyboardInterrupt or Exception as e:
         write_session_log()
-        raise e
+        return exit_code
 
 
 _session_log: str = ""
