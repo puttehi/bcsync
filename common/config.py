@@ -1,3 +1,4 @@
+from os import path
 from typing import Any
 
 
@@ -6,6 +7,8 @@ class Config:
     api_token = ""  # ballchasing.com API token
     replay_path = ""  # Path to read replay(s) from
     watch = 0  # Sleep time ms between loops. 0: Run once only
+    api_url = "https://ballchasing.com/api"
+    upload_url = f"{api_url}/v2/upload"
 
     @classmethod
     def set_verbosity(cls, verbosity: int) -> None:

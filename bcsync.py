@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Literal, Tuple, Union
 import requests
 from tabulate import tabulate
 
+import ballchasing_api
 from common.config import Config
 from common.file_handlers import (append_to_file, find_files_endswith,
                                   remove_duplicate_lines_from_file)
@@ -122,45 +123,32 @@ class Replay:
 
     def upload(
         self, session: requests.Session
-    ) -> Union[Literal["success"], Literal["old_duplicate"], Literal["new_duplicate"]]:
+    ) -> Union[
+        Literal["success"],
+        Literal["duplicate"],
+        Literal["fail"],
+        Literal["old_duplicate"],
+    ]:
         """Upload the replay to ballchasing.com.
         Returns:
-            "duplicate": if previously uploaded
+            "old_duplicate": if the replay was already uploaded before
+            "duplicate": if a previously uploaded replay already exists
             "success": if a new upload was successful
-        Raises:
-            Exception: When upload was not successful or a duplicate"""
+            "fail": if the upload failed horribly"""
         if self.duplicate:
             if Config.verbosity > 0:
                 print(f"Skipping known duplicate: {self.basename}")
             return "old_duplicate"
 
-        file_ = {"file": open(self.path, "rb")}
-
-        upload = session.post(
-            self.upload_url_base + "?visibility=" + self.visibility, files=file_
+        upload_result = ballchasing_api.upload_replay(
+            s=session, file_={"file": open(self.path, "rb")}, visibility=self.visibility
         )
 
-        if upload.status_code == 201:
-            # replay successfully created, return it's id
-            self.upload_json = upload.json()
-            id = self.upload_json["id"]
-            self.ballchasing_id = id
-            self.upload_result = "success"
-            if Config.verbosity > 0:
-                print(f"Upload successful. Replay ID: {id}")
-            return "success"
-        elif upload.status_code == 409:  # duplicate replay
-            # you have the choice: either raise an error, or return the existing replay id
-            self.upload_json = upload.json()
-            id = self.upload_json["id"]
-            self.ballchasing_id = id
-            self.upload_result = "duplicate"
-            if Config.verbosity > 0:
-                print(f"Duplicate replay found. Replay ID: {id}")
-            return "new_duplicate"
-        else:
-            # raise an error for other status codes (50x, ...)
-            raise Exception(json.dumps(upload.json()))
+        self.upload_json = upload_result["json"]
+        self.ballchasing_id = upload_result["id"]
+        self.upload_result = upload_result["result"]
+
+        return self.upload_result
 
     @classmethod
     def read_known_duplicates(cls) -> List[str]:
@@ -175,7 +163,6 @@ class Replay:
             return []
 
     known_duplicates: List[str] = []
-    upload_url_base = "https://ballchasing.com/api/v2/upload"
 
 
 def create_header_table(
@@ -312,13 +299,10 @@ def main() -> int:
 
     tick_rate = Config.watch
     while True:
-        # health check
-        ping = s.get("https://ballchasing.com/api/")
-        assert (
-            ping.status_code == 200
-        ), f"API health check did not return 200: {ping.status_code}"
-        if Config.verbosity > 1:
-            print("API health check OK")
+        if not ballchasing_api.health_check(s):
+            print(f"API health check failed. Retrying after 30 seconds.")
+            time.sleep(30)
+            continue
 
         # parse files to upload
         replays = [
@@ -335,7 +319,7 @@ def main() -> int:
                 continue
 
             result = replay.upload(s)
-            if result == "success" or result == "new_duplicate":
+            if result == "success" or result == "duplicate":
                 # Success: So we know next time it is a duplicate
                 # New duplicate: Well, it's a new duplicate
                 append_to_file(DUPLICATES_FILE, replay.basename)
