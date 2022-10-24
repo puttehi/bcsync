@@ -3,6 +3,7 @@ import datetime
 import glob
 import json
 import os
+import re
 import struct
 import sys
 import time
@@ -24,6 +25,7 @@ with open("pyproject.toml", "r") as f:
 SUCCESS, ERR, ERR_USAGE = 0, 1, 2
 SCRIPT_PATH = os.path.dirname(__file__)
 DUPLICATES_FILE = os.path.join(SCRIPT_PATH, "known_duplicates.db")
+SESSION_LOG_FILE = os.path.join(SCRIPT_PATH, "session.log")
 
 
 def read_args() -> Tuple[argparse.Namespace, int]:
@@ -171,15 +173,13 @@ class Replay:
     upload_url_base = "https://ballchasing.com/api/v2/upload"
 
 
-def read_replay(filepath: str) -> Replay:
-    """TODO"""
-    return Replay(filepath)
-
-
-def print_table(replays: List[Replay], replay_path: str, verbosity=0) -> str:
-    """Print results tabulate and return the printed string."""
-    if verbosity > 1:
-        print([replay.upload_json for replay in replays])
+def create_header_table(
+    replays: List[Replay], replay_path: str
+) -> Tuple[str, int, int, datetime.datetime]:
+    """Create header table containing
+    - Timestamp
+    - Replay path
+    - Upload/duplicate counts"""
     replay_path = truncate_path_between(replay_path)
     timestamp = datetime.datetime.now()
     success_count = len([r for r in replays if r.upload_result == "success"])
@@ -190,13 +190,7 @@ def print_table(replays: List[Replay], replay_path: str, verbosity=0) -> str:
 
     total_duplicates_count = old_duplicates_count + new_duplicates_count
     total_replay_count = total_duplicates_count + success_count
-
-    # TODO: Report ID and path of new uploads and duplicates
-    result_map = {
-        "success": "New: ",
-        "duplicate": "New duplicate: ",
-    }
-    tables = [
+    return (
         tabulate(
             [
                 ["Timestamp", timestamp],
@@ -208,20 +202,45 @@ def print_table(replays: List[Replay], replay_path: str, verbosity=0) -> str:
                 ["Total duplicates", total_duplicates_count],
             ]
         ),
-        tabulate(
-            [
-                (
-                    truncate_string(replay.basename, 8 + 3),
-                    result_map.get(replay.upload_result) + replay.ballchasing_id,
-                )
-                for replay in replays
-                if replay.upload_result != ""
-            ]
-        ),
-    ]
-    printed = "\n".join(tables)
-    print(printed)
-    return printed
+        success_count,
+        new_duplicates_count,
+        timestamp,
+    )
+
+
+def create_result_table(replays: List[Replay]) -> str:
+    """TODO"""
+    result_map = {
+        "success": "New: ",
+        "duplicate": "New duplicate: ",
+    }
+    return tabulate(
+        [
+            (
+                truncate_string(replay.basename, 8 + 3),
+                result_map.get(replay.upload_result) + replay.ballchasing_id,
+            )
+            for replay in replays
+            if replay.upload_result != ""
+        ]
+    )
+
+
+def read_replay(filepath: str) -> Replay:
+    """TODO"""
+    return Replay(filepath)
+
+
+def build_table_strings(
+    replays: List[Replay], replay_path: str, verbosity=0
+) -> Tuple[List[str], int, int, datetime.datetime]:
+    """Print results tabulate and return the printed string."""
+    if verbosity > 1:
+        print([replay.upload_json for replay in replays])
+
+    header, successes, new, timestamp = create_header_table(replays, replay_path)
+    tables = [header, create_result_table(replays)]
+    return tables, successes, new, timestamp
 
 
 def clean_duplicates_file(verbosity=0) -> None:
@@ -321,6 +340,7 @@ def main() -> int:
     Returns:
         exit_code (int): Exit code (0 = success, 1 = error, 2 = usage, ...)
     """
+    global _session_log
     exit_code = 0
     args, exit_code = read_args()
     if exit_code != 0:
@@ -341,6 +361,7 @@ def main() -> int:
         ],
         verbosity=args.verbosity,
     )
+    _replay_path = env["REPLAY_PATH"]
     if args.verbosity > 0:
         print(env)
         print(args)
@@ -361,6 +382,7 @@ def main() -> int:
 
         # parse files to upload
         replays = parse_replays(env["REPLAY_PATH"])
+        _replays = replays  # cache for logging
 
         # upload
         for replay in replays:
@@ -376,11 +398,24 @@ def main() -> int:
                 append_to_file(DUPLICATES_FILE, replay.basename)
 
         if not args.check:
-            run_log = print_table(
+            (
+                tables,
+                success_count,
+                new_duplicates_count,
+                timestamp,
+            ) = build_table_strings(
                 replays=replays,
                 replay_path=env["REPLAY_PATH"],
                 verbosity=args.verbosity,
             )
+            print(tables[0])  # header for run
+
+            if success_count > 0 or new_duplicates_count > 0:
+                ts = f" {timestamp} "
+                _session_log += f"{ts:-^24}\n"
+                _session_log += f"{tables[1]}\n"
+
+            print(_session_log)
 
         # clean up dupe file of dupes in case we got any
         clean_duplicates_file(verbosity=args.verbosity)
@@ -393,5 +428,49 @@ def main() -> int:
     return exit_code
 
 
+def write_session_log() -> None:
+    """Write session log to `SESSION_LOG_FILE`"""
+    global _session_log
+    next_index = 0
+    log_file = SESSION_LOG_FILE
+    log_basename = os.path.basename(log_file)
+    log_dirglob = os.path.dirname(log_file) + "/session.log*"
+    # print(log_file)
+    # print(log_basename)
+    # print(log_dirglob)
+    for filepath in glob.iglob(log_dirglob, recursive=False):
+        log_index = re.search(r"\d+", filepath)
+        # print(log_index)
+        if log_index is not None:
+            s = log_index.span()
+            idx = int(filepath[s[0] : s[1]])
+            next_index = min(max(next_index, int(str(idx))), 10) + 1
+            # print(next_index)
+    if next_index == 0 and os.path.exists(log_file):
+        next_index = 1
+    if next_index > 0:
+        log_file += str(next_index)
+    # print(next_index)
+    # print(log_file)
+    with open(log_file, "w") as f:
+        header, s, n, timestamp = create_header_table(_replays, _replay_path)
+        written_bytes = f.write(header + "\n" + _session_log)
+        print(_session_log)
+        print(f"Wrote {written_bytes} bytes to {log_file}")
+
+
+def main_wrapper() -> int:
+    """Capture exceptions from main to save session logs."""
+    try:
+        return main()
+    except KeyboardInterrupt or Exception as e:
+        write_session_log()
+        raise e
+
+
+_session_log: str = ""
+_replays: List[Replay] = []
+_replay_path: str = ""
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main_wrapper())
