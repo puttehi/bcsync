@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Replay data container class definition"""
+import os
 from typing import List, Literal, Union
 
 import requests
