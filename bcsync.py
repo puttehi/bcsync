@@ -12,9 +12,10 @@ from typing import Any, Dict, List, Literal, Tuple, Union
 import requests
 from tabulate import tabulate
 
-from config import Config
-from file_handlers import (append_to_file, find_files_endswith,
-                           remove_duplicate_lines_from_file)
+from common.config import Config
+from common.file_handlers import (append_to_file, find_files_endswith,
+                                  remove_duplicate_lines_from_file)
+from common.string_manip import truncate_path_between, truncate_string
 
 __version__ = ""
 with open("pyproject.toml", "r") as f:
@@ -250,29 +251,6 @@ def print_replay_attributes(replay: Replay) -> str:
     print(printed)
 
     return printed
-
-
-def truncate_path_between(input_path: str, start_length=3, end_length=2) -> str:
-    """Truncate long paths from the middle.
-
-    /home/user/some/long/path/to/somewhere/far/away
-    /home/user/some/.../far/away
-
-    where `start_length` sets amount of portions on the left side of the dots
-    and `end_length` vice versa on the right side."""
-
-    parts = [x for x in input_path.split("/") if x != ""]
-    if len(parts) < start_length + end_length:
-        # nothing to do, already in parameters
-        return input_path
-
-    return "/".join(parts[:start_length]) + "/.../" + "/".join(parts[-end_length:])
-
-
-def truncate_string(string: str, length=24) -> str:
-    """Truncate string with dots. `length` includes dots."""
-    end = "..."
-    return string[: min(length, len(string)) - len(end)] + end
 
 
 def apply_overrides(suggested: Any, overrides: List[Any]) -> str:

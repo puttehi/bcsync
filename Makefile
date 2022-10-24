@@ -29,4 +29,4 @@ format: setup-dev
 
 lint: setup-dev
 	$(PR) mypy --install-types
-	$(PR) mypy .
+	$(PR) mypy . --namespace-packages --explicit-package-bases

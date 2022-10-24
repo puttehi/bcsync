@@ -4,7 +4,7 @@ import glob
 import os
 from typing import List
 
-from config import Config
+from common.config import Config
 
 
 def remove_duplicate_lines_from_file(filepath: str) -> int:
