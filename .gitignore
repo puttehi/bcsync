@@ -6,3 +6,4 @@ known_duplicates.db*
 **/*.log
 *.swp
 __pycache__
+*.rotate

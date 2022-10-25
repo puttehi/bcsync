@@ -15,6 +15,7 @@ from tabulate import tabulate
 import ballchasing_api
 from common.config import Config
 from common.file_handlers import (append_to_file, find_files_endswith,
+                                  overwrite_to_file,
                                   remove_duplicate_lines_from_file)
 from common.string_manip import truncate_path_between, truncate_string
 from replay import Replay
@@ -319,36 +320,48 @@ def main() -> int:
     return exit_code
 
 
+def read_rotate_file() -> int:
+    """Read session.rotate for the current log index"""
+    with open("session.rotate", "r") as f:
+        return int(f.readline())
+
+
+def write_rotate_file(index: int) -> int:
+    """Write current log index to session.rotate.
+    Returns:
+        (int): Total bytes written"""
+    return overwrite_to_file("session.rotate", str(index))
+
+
+def get_next_log_index() -> int:
+    """Get next log index from session.rotate
+    or 0 if it doesn't exist."""
+    try:
+        return read_rotate_file() + 1
+    except FileNotFoundError as e:
+        return 0
+
+
 def write_session_log() -> None:
     """Write session log to `SESSION_LOG_FILE`"""
     global _session_log
-    next_index = 0
+
+    next_index = get_next_log_index()
+    if next_index > Config.max_session_logfiles:
+        next_index = 0
+
     log_file = SESSION_LOG_FILE
-    log_basename = os.path.basename(log_file)
-    log_dirglob = os.path.dirname(log_file) + "/session.log*"
-    # print(log_file)
-    # print(log_basename)
-    # print(log_dirglob)
-    for filepath in glob.iglob(log_dirglob, recursive=False):
-        log_index = re.search(r"\d+", filepath)
-        # print(log_index)
-        if log_index is not None:
-            s = log_index.span()
-            idx = int(filepath[s[0] : s[1]])
-            next_index = min(max(next_index, int(str(idx))), 10) + 1
-            # print(next_index)
-    if next_index == 0 and os.path.exists(log_file):
-        next_index = 1
     if next_index > 0:
         log_file += str(next_index)
-    # print(next_index)
-    # print(log_file)
+
     with open(log_file, "w") as f:
         header, s, n, timestamp = create_header_table(_replays)
         session_report = header + "\n" + _session_log
         written_bytes = append_to_file(filepath=log_file, text=session_report)
         print(session_report)
         print(f"Wrote {written_bytes} bytes to {log_file}")
+
+    write_rotate_file(next_index)
 
 
 def main_wrapper() -> int:

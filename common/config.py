@@ -11,6 +11,7 @@ class Config:
     api_url = "https://ballchasing.com/api"
     upload_url = f"{api_url}/v2/upload"
     duplicates_file = "known_duplicates.db"
+    max_session_logfiles = 10
 
     @classmethod
     def set_verbosity(cls, verbosity: int) -> None:
