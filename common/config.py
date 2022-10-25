@@ -7,9 +7,10 @@ class Config:
     api_token = ""  # ballchasing.com API token
     replay_path = ""  # Path to read replay(s) from
     watch = 0  # Sleep time ms between loops. 0: Run once only
-    api_url = "https://ballchasing.com/api"
-    upload_url = f"{api_url}/v2/upload"
-    duplicates_file = "known_duplicates.db"
+    api_url = "https://ballchasing.com/api" # Also works as a health check (expect 200)
+    upload_url = f"{api_url}/v2/upload" # Supports ?visibility=<private|public>
+    get_replay_url = f"{api_url}/replays" # All. Single: append /<replay-id>
+    duplicates_file = "known_duplicates.db" # Filename, not path
 
     @classmethod
     def set_verbosity(cls, verbosity: int) -> None:
