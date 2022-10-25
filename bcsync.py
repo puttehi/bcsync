@@ -40,16 +40,22 @@ def read_args() -> Tuple[argparse.Namespace, int]:
         epilog="Upload replays to ballchasing.com. Pass in either arg to auth."
     )
     parser.add_argument(
+        "-c",
+        "--check",
+        help="Only print replay info",
+        action="store_true",
+    )
+    parser.add_argument(
         "-e",
         "--env",
         help=".env file to read values from. Other arguments might overwrite the values from the file",
         default=None,
     )
     parser.add_argument(
-        "-t",
-        "--token",
-        help="ballchasing.com API token. Can also be passed as env API_TOKEN",
-        default=None,
+        "-p",
+        "--print_viewer_url",
+        help="Print URL to ballchasing.com 3D replay viewer in session logs",
+        action="store_true",
     )
     parser.add_argument(
         "-r",
@@ -58,10 +64,10 @@ def read_args() -> Tuple[argparse.Namespace, int]:
         default=None,
     )
     parser.add_argument(
-        "-c",
-        "--check",
-        help="Only print replay info",
-        action="store_true",
+        "-t",
+        "--token",
+        help="ballchasing.com API token. Can also be passed as env API_TOKEN",
+        default=None,
     )
     parser.add_argument(
         "-v", "--verbosity", action="count", default=0, help="Verbosity (-v, -vv, ..)"
@@ -145,22 +151,23 @@ def create_header_table(
     )
 
 
-def create_result_table(replays: List[Replay]) -> str:
+def create_result_table(replays: List[Replay], viewer_url=False) -> str:
     """TODO"""
     result_map = {
         "success": "New: ",
         "duplicate": "New duplicate: ",
     }
-    return tabulate(
-        [
-            (
-                truncate_string(replay.basename, 8 + 3),
-                result_map.get(replay.upload_result) + replay.ballchasing_id,
-            )
-            for replay in replays
-            if replay.upload_result != ""
-        ]
-    )
+    rows = []
+    for replay in replays:
+        if replay.upload_result == "":
+            continue
+        basename = truncate_string(replay.basename, 8 + 3)
+        info = result_map.get(replay.upload_result) + replay.ballchasing_id
+        if viewer_url:
+            info += f"\nhttps://ballchasing.com/replay/{replay.ballchasing_id}#watch"
+        rows.append((basename, info))
+
+    return tabulate(rows)
 
 
 def build_table_strings(
@@ -171,7 +178,10 @@ def build_table_strings(
         print([replay.upload_json for replay in replays])
 
     header, successes, new, timestamp = create_header_table(replays)
-    tables = [header, create_result_table(replays)]
+    tables = [
+        header,
+        create_result_table(replays=replays, viewer_url=Config.print_viewer_url),
+    ]
     return tables, successes, new, timestamp
 
 
@@ -230,6 +240,8 @@ def main() -> int:
         ).strip()
     )
     Config.set_duplicates_file(os.path.join(SCRIPT_PATH, "known_duplicates.db"))
+    Config.set_watch(args.watch)
+    Config.set_print_viewer_url(args.print_viewer_url)
 
     if Config.verbosity > 0:
         print(f"config={str(vars(Config))}")
@@ -240,9 +252,6 @@ def main() -> int:
     s = requests.Session()
     s.headers.update({"Authorization": Config.api_token})
 
-    Config.set_watch(args.watch)
-
-    tick_rate = Config.watch
     while True:
         if not ballchasing_api.health_check(s):
             print(f"API health check failed. Retrying after 30 seconds.")
@@ -302,10 +311,10 @@ def main() -> int:
                 f"Wrote {written_bytes} bytes to duplicates file {Config.duplicates_file}"
             )
 
-        if tick_rate == 0:
+        if Config.watch == 0:
             break
 
-        time.sleep(int(tick_rate) / 1000)
+        time.sleep(int(Config.watch) / 1000)
 
     return exit_code
 

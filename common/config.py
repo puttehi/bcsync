@@ -7,6 +7,7 @@ class Config:
     api_token = ""  # ballchasing.com API token
     replay_path = ""  # Path to read replay(s) from
     watch = 0  # Sleep time ms between loops. 0: Run once only
+    print_viewer_url = False  # Print ballchasing.com 3D viewer url in session logs
     api_url = "https://ballchasing.com/api"
     upload_url = f"{api_url}/v2/upload"
     duplicates_file = "known_duplicates.db"
@@ -30,3 +31,7 @@ class Config:
     @classmethod
     def set_duplicates_file(cls, duplicates_file: str) -> None:
         cls.duplicates_file = duplicates_file
+
+    @classmethod
+    def set_print_viewer_url(cls, print_viewer_url: bool) -> None:
+        cls.print_viewer_url = print_viewer_url
