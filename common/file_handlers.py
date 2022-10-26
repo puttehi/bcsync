@@ -2,7 +2,7 @@
 """File handling functions for bcsync"""
 import glob
 import os
-from typing import List
+from typing import Any, Callable, List
 
 from common.config import Config
 
@@ -57,6 +57,24 @@ def find_files_endswith(dirpath: str, ending: str, recurse=True) -> List[str]:
     return found_files
 
 
+def ensure_dir_exists(func: Callable[..., Any]):
+    """Create directory of `kwargs.filepath` (or arg 0) if it doesn't exist"""
+
+    def wrapper(*args, **kwargs):
+        filepath = kwargs.get("filepath", None)
+        if filepath is None:
+            filepath = args[0]
+
+        dirpath = os.path.dirname(filepath)
+        if not os.path.exists(dirpath):
+            os.makedirs(name=dirpath, exist_ok=True)
+
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+@ensure_dir_exists
 def append_to_file(filepath: str, text: str) -> int:
     """Append `text` to `filepath`.
     Create the file if it doesn't exist.
@@ -72,6 +90,7 @@ def append_to_file(filepath: str, text: str) -> int:
     return total_bytes
 
 
+@ensure_dir_exists
 def overwrite_to_file(filepath: str, text: str) -> int:
     """Overwrite file content of `filepath` with `text`.
     Create the file if it doesn't exist.
@@ -82,3 +101,49 @@ def overwrite_to_file(filepath: str, text: str) -> int:
         total_bytes = f.write(text.rstrip() + "\n")
 
     return total_bytes
+
+
+def read_rotate_file(identifier: str) -> int:
+    """Read `identifier`.rotate for the current log index"""
+    rotate_file = os.path.join(Config.working_directory, "log", f"{identifier}.rotate")
+    with open(rotate_file, "r") as f:
+        return int(f.readline())
+
+
+def write_rotate_file(identifier: str, index: int) -> int:
+    """Write current log index to `identifier`.rotate.
+    Returns:
+        (int): Total bytes written"""
+    rotate_file = os.path.join(Config.working_directory, "log", f"{identifier}.rotate")
+    return overwrite_to_file(rotate_file, str(index))
+
+
+def get_next_rotate_index(identifier: str) -> int:
+    """Get next log index using `identifier`.rotate
+    or 0 if it doesn't exist."""
+    try:
+        return read_rotate_file(identifier=identifier) + 1
+    except FileNotFoundError as e:
+        return 0
+
+
+def write_rotated_log(identifier: str, text: str) -> None:
+    """Write session log to `identifier`.logN
+    where N is the next log index determined
+    from `identifier`.rotate storing the current
+    log index N. First log is written without a
+    suffix N."""
+
+    next_index = get_next_rotate_index(identifier=identifier)
+    if next_index > Config.max_session_logfiles:
+        next_index = 0
+
+    log_file = os.path.join(Config.working_directory, "log", f"{identifier}.log")
+    if next_index > 0:
+        log_file += str(next_index)
+
+    written_bytes = append_to_file(filepath=log_file, text=text)
+    print(text)
+    print(f"Wrote {written_bytes} bytes to {log_file}")
+
+    write_rotate_file(identifier=identifier, index=next_index)

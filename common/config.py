@@ -11,6 +11,8 @@ class Config:
     api_url = "https://ballchasing.com/api"
     upload_url = f"{api_url}/v2/upload"
     duplicates_file = "known_duplicates.db"
+    working_directory = ""
+    session_log_file_identifier = "session"
     max_session_logfiles = 10
 
     @classmethod
@@ -36,3 +38,7 @@ class Config:
     @classmethod
     def set_print_viewer_url(cls, print_viewer_url: bool) -> None:
         cls.print_viewer_url = print_viewer_url
+
+    @classmethod
+    def set_working_directory(cls, working_directory: str) -> None:
+        cls.working_directory = working_directory

@@ -16,7 +16,8 @@ import ballchasing_api
 from common.config import Config
 from common.file_handlers import (append_to_file, find_files_endswith,
                                   overwrite_to_file,
-                                  remove_duplicate_lines_from_file)
+                                  remove_duplicate_lines_from_file,
+                                  write_rotated_log)
 from common.string_manip import truncate_path_between, truncate_string
 from replay import Replay
 
@@ -31,8 +32,6 @@ with open("pyproject.toml", "r") as f:
 
 
 SUCCESS, ERR, ERR_USAGE = 0, 1, 2
-SCRIPT_PATH = os.path.dirname(__file__)
-SESSION_LOG_FILE = os.path.join(SCRIPT_PATH, "session.log")
 
 
 def read_args() -> Tuple[argparse.Namespace, int]:
@@ -223,13 +222,19 @@ def main() -> int:
     if exit_code != 0:
         return exit_code
 
-    Config.set_verbosity(args.verbosity)
-
     if args.version == True:
         print(f"* {'bcsync --version:':*^24}")
         print(f"{__version__.strip() + ' ':*^24}")
         print(f"* Suggestion: Try bcsync --help")
         return exit_code
+
+    Config.set_verbosity(args.verbosity)
+    Config.set_working_directory(os.path.dirname(__file__))
+    Config.set_duplicates_file(
+        os.path.join(Config.working_directory, "known_duplicates.db")
+    )
+    Config.set_watch(args.watch)
+    Config.set_print_viewer_url(args.print_viewer_url)
 
     env: Dict[str, str] = read_env(args.env)
     Config.set_api_token(
@@ -240,9 +245,6 @@ def main() -> int:
             env["REPLAY_PATH"], [os.getenv("REPLAY_PATH", None), args.replay_path]
         ).strip()
     )
-    Config.set_duplicates_file(os.path.join(SCRIPT_PATH, "known_duplicates.db"))
-    Config.set_watch(args.watch)
-    Config.set_print_viewer_url(args.print_viewer_url)
 
     if Config.verbosity > 0:
         print(f"config={str(vars(Config))}")
@@ -285,7 +287,7 @@ def main() -> int:
             if result == "success" or result == "duplicate":
                 # Success: So we know next time it is a duplicate
                 # New duplicate: Well, it's a new duplicate
-                append_to_file(Config.duplicates_file, replay.basename)
+                append_to_file(filepath=Config.duplicates_file, text=replay.basename)
 
         if not args.check:
             (
@@ -320,48 +322,18 @@ def main() -> int:
     return exit_code
 
 
-def read_rotate_file() -> int:
-    """Read session.rotate for the current log index"""
-    with open("session.rotate", "r") as f:
-        return int(f.readline())
-
-
-def write_rotate_file(index: int) -> int:
-    """Write current log index to session.rotate.
-    Returns:
-        (int): Total bytes written"""
-    return overwrite_to_file("session.rotate", str(index))
-
-
-def get_next_log_index() -> int:
-    """Get next log index from session.rotate
-    or 0 if it doesn't exist."""
-    try:
-        return read_rotate_file() + 1
-    except FileNotFoundError as e:
-        return 0
-
-
 def write_session_log() -> None:
-    """Write session log to `SESSION_LOG_FILE`"""
+    """Write session log to `Config.session_log_file_identifier`.log"""
     global _session_log
 
-    next_index = get_next_log_index()
-    if next_index > Config.max_session_logfiles:
-        next_index = 0
+    header, s, n, timestamp = create_header_table(replays=_replays)
+    session_report = header + "\n" + _session_log
 
-    log_file = SESSION_LOG_FILE
-    if next_index > 0:
-        log_file += str(next_index)
+    write_rotated_log(
+        identifier=Config.session_log_file_identifier, text=session_report
+    )
 
-    with open(log_file, "w") as f:
-        header, s, n, timestamp = create_header_table(_replays)
-        session_report = header + "\n" + _session_log
-        written_bytes = append_to_file(filepath=log_file, text=session_report)
-        print(session_report)
-        print(f"Wrote {written_bytes} bytes to {log_file}")
-
-    write_rotate_file(next_index)
+    return
 
 
 def main_wrapper() -> int:
