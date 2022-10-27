@@ -8,7 +8,8 @@ class Config:
     replay_path = ""  # Path to read replay(s) from
     watch = 0  # Sleep time ms between loops. 0: Run once only
     print_viewer_url = False  # Print ballchasing.com 3D viewer url in session logs
-    api_url = "https://ballchasing.com/api"
+    web_url = "https://ballchasing.com"
+    api_url = f"{web_url}/api"
     upload_url = f"{api_url}/v2/upload"
     duplicates_file = "known_duplicates.db"
     working_directory = ""

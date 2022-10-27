@@ -2,23 +2,25 @@ class Printer:
     line_count: int = 0
 
     @classmethod
-    def print(cls, *values, **kwargs) -> None:
+    def print(cls, *args, **kwargs) -> None:
         """print() something"""
-        string = " ".join(
-            list(values)
-        )  # print() like behaviour but we want to count lines
-        lines = string.split("\n")
-        line_count = len(lines)
-        print(string, **kwargs)
+        line_count = 0
+        for a in args:
+            if type(a) is str:
+                line_count += a.count("\n")
+            else:
+                line_count += 1
+        print(*args, **kwargs)
         cls.line_count += line_count
 
     @classmethod
     def clear_lines(cls, count: int = 0) -> None:
         """Clear `count` lines to end of terminal.
         If `count == 0`, clears all lines."""
-        c = count
-        if count == 0:
-            c = cls.line_count
+        c = cls.line_count if count == 0 else count
+        c += 1  # TODO: for some reason n lines behind?
+        if c == 0:
+            return
         move_up = f"\033[{c}A"
         clear_to_end = "\33[J"
         print(move_up + clear_to_end, end="\r")

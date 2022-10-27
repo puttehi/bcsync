@@ -5,6 +5,9 @@ import os
 from typing import Any, Callable, List
 
 from common.config import Config
+from common.printer import Printer
+
+print = Printer.print
 
 
 def remove_duplicate_lines_from_file(filepath: str) -> int:
@@ -142,7 +145,7 @@ def write_rotated_log(identifier: str, text: str) -> None:
     if next_index > 0:
         log_file += str(next_index)
 
-    written_bytes = append_to_file(filepath=log_file, text=text)
+    written_bytes = overwrite_to_file(filepath=log_file, text=text)
     print(text)
     print(f"Wrote {written_bytes} bytes to {log_file}")
 

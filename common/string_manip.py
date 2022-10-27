@@ -22,3 +22,21 @@ def truncate_path_between(input_path: str, start_length=3, end_length=2) -> str:
 def truncate_string(string: str, length=24, ending="...") -> str:
     """Truncate string with `ending`. `length` includes `ending`"""
     return string[: min(length, len(string)) - len(ending)] + ending
+
+
+def center_pad_string(
+    string: str, line_length: int, ws_pad_count=4, pad_char=" "
+) -> str:
+    """Pad `string` with whitespaces so it is centered on a line of length `line_length`.
+    If `pad_char` is given, `ws_pad_count` can be used to adjust the amount of whitespace
+    and `pad_char`.
+    Default count 4 and char `"."` on 12 length line with string "abcd":
+        "abcd" input string
+        "    abcd    " 12 line length
+        "..  abcd  .." 12 line length and char '.' with default pad count 4"""
+    ws_padding = len(string) + ws_pad_count
+    ws_padded = "{s:{c}^{n}}".format(s=string, c=" ", n=ws_padding)
+
+    char_padded = "{s:{c}^{n}}\n".format(s=ws_padded, c=pad_char, n=line_length)
+
+    return char_padded

@@ -7,7 +7,7 @@ import re
 import struct
 import sys
 import time
-from typing import Any, Dict, List, Literal, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import requests
 from tabulate import tabulate
@@ -18,8 +18,14 @@ from common.file_handlers import (append_to_file, find_files_endswith,
                                   overwrite_to_file,
                                   remove_duplicate_lines_from_file,
                                   write_rotated_log)
+from common.printer import Printer
+
+print = Printer.print
+clear_lines = Printer.clear_lines
 from common.string_manip import truncate_path_between, truncate_string
-from replay import Replay
+from replay import Replay, ReplayData
+from runner import RunResult
+from session import Session
 
 __version__ = ""
 with open("pyproject.toml", "r") as f:
@@ -78,7 +84,7 @@ def read_args() -> Tuple[argparse.Namespace, int]:
     parser.add_argument(
         "-w",
         "--watch",
-        help="Watch for uploads every N milliseconds.",
+        help="Watch for uploads every N seconds. Or use '1 s', '1 m' 1 h'",
         default=0,
     )
 
@@ -116,75 +122,6 @@ def read_env(filepath: str | None) -> Dict[str, str]:
     return env
 
 
-def create_header_table(
-    replays: List[Replay],
-) -> Tuple[str, int, int, datetime.datetime]:
-    """Create header table containing
-    - Timestamp
-    - Replay path
-    - Upload/duplicate counts"""
-    replay_path = truncate_path_between(Config.replay_path)
-    timestamp = datetime.datetime.now()
-    success_count = len([r for r in replays if r.upload_result == "success"])
-    old_duplicates_count = len(
-        [r for r in replays if r.upload_result == "" and r.duplicate is True]
-    )
-    new_duplicates_count = len([r for r in replays if r.upload_result == "duplicate"])
-
-    total_duplicates_count = old_duplicates_count + new_duplicates_count
-    total_replay_count = total_duplicates_count + success_count
-    return (
-        tabulate(
-            [
-                ["Timestamp", timestamp],
-                ["Replay path", replay_path],
-                ["Total", total_duplicates_count + success_count],
-                ["Successful", success_count],
-                ["New duplicates", new_duplicates_count],
-                ["Old duplicates", old_duplicates_count],
-                ["Total duplicates", total_duplicates_count],
-            ]
-        ),
-        success_count,
-        new_duplicates_count,
-        timestamp,
-    )
-
-
-def create_result_table(replays: List[Replay], viewer_url=False) -> str:
-    """TODO"""
-    result_map = {
-        "success": "New: ",
-        "duplicate": "New duplicate: ",
-    }
-    rows = []
-    for replay in replays:
-        if replay.upload_result == "":
-            continue
-        basename = truncate_string(replay.basename, 8 + 3)
-        info = result_map.get(replay.upload_result) + replay.ballchasing_id
-        if viewer_url:
-            info += f"\nhttps://ballchasing.com/replay/{replay.ballchasing_id}#watch"
-        rows.append((basename, info))
-
-    return tabulate(rows)
-
-
-def build_table_strings(
-    replays: List[Replay],
-) -> Tuple[List[str], int, int, datetime.datetime]:
-    """Print results tabulate and return the printed string."""
-    if Config.verbosity > 1:
-        print([replay.upload_json for replay in replays])
-
-    header, successes, new, timestamp = create_header_table(replays)
-    tables = [
-        header,
-        create_result_table(replays=replays, viewer_url=Config.print_viewer_url),
-    ]
-    return tables, successes, new, timestamp
-
-
 def print_replay_attributes(replay: Replay) -> str:
     """Print Replay object attributes and return the printed string."""
     printed = f"{'8<':-^20}\n"
@@ -211,32 +148,40 @@ def apply_overrides(suggested: Any, overrides: List[Any]) -> str:
     return forced
 
 
-def main() -> int:
-    """Entrypoint
-    Returns:
-        exit_code (int): Exit code (0 = success, 1 = error, 2 = usage, ...)
-    """
-    global _session_log
-    exit_code = 0
-    args, exit_code = read_args()
-    if exit_code != 0:
-        return exit_code
+def parse_watch(watch: str) -> int:
+    """Parse `--watch` argument"""
+    ws_count = watch.count(" ")
+    w = 0
+    if ws_count == 0:
+        w = int(watch)
+    elif ws_count == 1:
+        s = watch.split(" ")
+        num = int(s[0])
+        sign = s[1]
+        multi = 1
+        if sign[0] == "m":
+            multi = 60
+        elif sign[0] == "h":
+            multi = 3600
+        w = num * multi
+    else:
+        raise ValueError(
+            "Give --watch in form '0' (seconds) or '0 <m|h> (minutes, hours)'"
+        )
 
-    if args.version == True:
-        print(f"* {'bcsync --version:':*^24}")
-        print(f"{__version__.strip() + ' ':*^24}")
-        print(f"* Suggestion: Try bcsync --help")
-        return exit_code
+    return w
 
+
+def update_config(args: argparse.Namespace, env: dict[str, str]) -> None:
+    """Update Config variables"""
     Config.set_verbosity(args.verbosity)
     Config.set_working_directory(os.path.dirname(__file__))
     Config.set_duplicates_file(
         os.path.join(Config.working_directory, "known_duplicates.db")
     )
-    Config.set_watch(args.watch)
+    Config.set_watch(parse_watch(args.watch))
     Config.set_print_viewer_url(args.print_viewer_url)
 
-    env: Dict[str, str] = read_env(args.env)
     Config.set_api_token(
         apply_overrides(env["API_TOKEN"], [os.getenv("API_TOKEN", None), args.token])
     )
@@ -251,12 +196,34 @@ def main() -> int:
         print(f"{env=}")
         print(f"{args=}")
 
+
+def main() -> int:
+    """Entrypoint
+    Returns:
+        exit_code (int): Exit code (0 = success, 1 = error, 2 = usage, ...)
+    """
+    exit_code = 0
+    args, exit_code = read_args()
+    if exit_code != 0:
+        return exit_code
+
+    if args.version == True:
+        print(f"* {'bcsync --version:':*^24}")
+        print(f"{__version__.strip() + ' ':*^24}")
+        print(f"* Suggestion: Try bcsync --help")
+        return exit_code
+
+    env: Dict[str, str] = read_env(args.env)
+    update_config(args=args, env=env)
+
     # keep headers through session
-    s = requests.Session()
-    s.headers.update({"Authorization": Config.api_token})
+    Session.session = requests.Session()
+    Session.session.headers.update({"Authorization": Config.api_token})
+    Session.run_results = []
 
     while True:
-        if not ballchasing_api.health_check(s):
+        clear_lines()
+        if not ballchasing_api.health_check(Session.session):
             print(f"API health check failed. Retrying after 30 seconds.")
             time.sleep(30)
             continue
@@ -269,41 +236,27 @@ def main() -> int:
         _replays = replays  # cache for logging
         status_length = 36
         # upload
-        for replay in replays:
-            if args.check:
-                # --check so just print the attributes of the replays
+        run_result: RunResult = {
+            "timestamp": datetime.datetime.now(),
+            "replaydatas": [],
+        }
+
+        if args.check:
+            for replay in replays:
                 print_replay_attributes(replay)
-                continue
+                return SUCCESS
 
-            basename = replay.basename
-            if Config.verbosity == 0:
-                response_log = f"Out: {basename}"
-                print(truncate_string(response_log, status_length), end="\r")
-            result = replay.upload(s)
-            if Config.verbosity > 0 and result != "old_duplicate":
-                response_log = f"In: {result} {basename}\n"
-                print(truncate_string(response_log, status_length))
+        Session.print_header()
+        for replay in replays:
+            rd = handle_replay(replay)
+            if rd is not None:
+                run_result["replaydatas"].append(rd)
 
-            if result == "success" or result == "duplicate":
-                # Success: So we know next time it is a duplicate
-                # New duplicate: Well, it's a new duplicate
-                append_to_file(filepath=Config.duplicates_file, text=replay.basename)
-
+        Session.update_session_statistics(replays=replays, run_result=run_result)
+        clear_lines()
         if not args.check:
-            (
-                tables,
-                success_count,
-                new_duplicates_count,
-                timestamp,
-            ) = build_table_strings(replays=replays)
-            print(tables[0])  # header for run
-
-            if success_count > 0 or new_duplicates_count > 0:
-                ts = f" {timestamp} "
-                _session_log += f"{ts:-^36}\n"
-                _session_log += f"{tables[1]}\n"
-
-            print(_session_log)
+            Session.print_header()
+            Session.print_body()
 
         # clean up dupe file of dupes in case we got any
         written_bytes = remove_duplicate_lines_from_file(
@@ -317,23 +270,46 @@ def main() -> int:
         if Config.watch == 0:
             break
 
-        time.sleep(int(Config.watch) / 1000)
+        time.sleep(int(Config.watch))
 
     return exit_code
 
 
-def write_session_log() -> None:
-    """Write session log to `Config.session_log_file_identifier`.log"""
-    global _session_log
+def handle_replay(replay: Replay) -> Union[ReplayData, None]:
+    """Handle a replay and return data if it made a request or None."""
+    rd = upload_replay(replay)
+    if rd is None:
+        return None
+    result = rd["result"]
+    basename = rd["basename"]
+    if result == "success" or result == "duplicate":
+        # Success: So we know next time it is a duplicate
+        # New duplicate: Well, it's a new duplicate
+        append_to_file(filepath=Config.duplicates_file, text=basename)
 
-    header, s, n, timestamp = create_header_table(replays=_replays)
-    session_report = header + "\n" + _session_log
+    return rd
 
-    write_rotated_log(
-        identifier=Config.session_log_file_identifier, text=session_report
-    )
 
-    return
+def upload_replay(replay: Replay, max_line_length=26) -> Union[ReplayData, None]:
+    """Upload a Replay"""
+    if Session.session is None:
+        raise ValueError("No requests.Session set to Session.session")
+    if Config.verbosity == 0:
+        basename = replay.basename
+        request_log = f"Out: {basename}"
+        print(truncate_string(request_log, max_line_length), end="\r")
+    rd: Optional[ReplayData] = replay.upload(Session.session)  # <-- slow
+    if rd is None:
+        # known duplicate, upload skipped
+        return None
+
+    if Config.verbosity > 0:
+        result = rd["result"]
+        basename = rd["basename"]
+        response_log = f"In: {result} {basename}\n"
+        print(truncate_string(response_log, max_line_length))
+
+    return rd
 
 
 def main_wrapper() -> int:
@@ -343,11 +319,10 @@ def main_wrapper() -> int:
         exit_code = main()
         return exit_code
     except KeyboardInterrupt or Exception as e:
-        write_session_log()
+        Session.write_report_to_file()
         return exit_code
 
 
-_session_log: str = ""
 _replays: List[Replay] = []
 
 if __name__ == "__main__":

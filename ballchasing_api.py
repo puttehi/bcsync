@@ -3,6 +3,9 @@ from typing import IO, Any, Literal, Mapping, TypedDict
 import requests
 
 from common.config import Config
+from common.printer import Printer
+
+print = Printer.print
 
 
 def health_check(s: requests.Session) -> bool:
@@ -21,13 +24,16 @@ def health_check(s: requests.Session) -> bool:
     return healthy
 
 
-class UploadResult(TypedDict):
-    status_code: int  # HTTP status code
-    json: dict  # response json
+class BaseResult(TypedDict):
     result: Literal[
         "success", "duplicate", "fail"
     ]  # success: new upload, duplicate: already exists, fail: something is wrong
     id: str  # ballchasing.com replay id
+
+
+class UploadResult(BaseResult):
+    status_code: int  # HTTP status code
+    json: dict  # response json
 
 
 def upload_replay(
