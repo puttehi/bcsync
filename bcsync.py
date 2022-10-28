@@ -223,10 +223,15 @@ def main() -> int:
 
     while True:
         clear_lines()
-        if not ballchasing_api.health_check(Session.session):
-            print(f"API health check failed. Retrying after 30 seconds.")
-            time.sleep(30)
-            continue
+        try:
+            health = ballchasing_api.health_check(Session.session)
+        except requests.exceptions.ConnectionError:
+            pass
+        finally:
+            if not health:
+                print(f"API health check failed. Retrying after 30 seconds.")
+                time.sleep(30)
+                continue
 
         # parse files to upload
         replays = [
@@ -317,11 +322,10 @@ def main_wrapper() -> int:
     exit_code = 0
     try:
         exit_code = main()
-        return exit_code
     except KeyboardInterrupt or Exception as e:
         Session.write_report_to_file()
+    finally:
         return exit_code
-
 
 _replays: List[Replay] = []
 
