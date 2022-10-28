@@ -327,6 +327,7 @@ def main_wrapper() -> int:
     finally:
         return exit_code
 
+
 _replays: List[Replay] = []
 
 if __name__ == "__main__":
