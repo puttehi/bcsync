@@ -38,12 +38,30 @@ with open("pyproject.toml", "r") as f:
 
 
 SUCCESS, ERR, ERR_USAGE = 0, 1, 2
+help_text = """Upload replays to ballchasing.com.
+
+example usage:
+    Use .env from install directory for API_TOKEN and REPLAY_PATH and sync every 15 minutes:
+        bcsync -e .env -w "15 m"
+    Use .env from install directory and just sync a folder of replays:
+        bcsync -e .env
+    Pass API_TOKEN and REPLAY_PATH as args, print a link to 3D replay viewer and sync every hour:
+        bcsync -t 12345ABCDE -r ~/rl-demos -p -w "1 h"
+    Pass API_TOKEN and REPLAY_PATH through env and sync every 2 minutes:
+        API_TOKEN=12345ABCDE REPLAY_PATH=~/rl-demos bcsync -w 120"""
 
 
 def read_args() -> Tuple[argparse.Namespace, int]:
     """Read command line arguments"""
+
+    class Formatter(
+        argparse.RawDescriptionHelpFormatter, argparse.ArgumentDefaultsHelpFormatter
+    ):
+        pass
+
     parser = argparse.ArgumentParser(
-        epilog="Upload replays to ballchasing.com. Pass in either arg to auth."
+        epilog=help_text,
+        formatter_class=Formatter,
     )
     parser.add_argument(
         "-c",

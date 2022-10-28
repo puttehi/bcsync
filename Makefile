@@ -1,21 +1,19 @@
 SHELL:=/bin/bash
 
-PR:=poetry run
-INSTALL_DIR:=~
+# Project settings
+PROJECT_NAME:=bcsync
+ENTRYPOINT:=src/$(PROJECT_NAME).py
+
+# Install dir
+INSTALL_DIR:=~/$(PROJECT_NAME)
 LINK_DIR:=~/bin
 
-PROJECT_NAME:=bcsync
-ENTRYPOINT:=$(PROJECT_NAME).py
+# Shortcut
+PR:=poetry run
+MP:=MYPYPATH=src $(PR) mypy src
+install: format lint build copy
 
-install: setup-dev format lint	
-	$(PR) pyinstaller $(ENTRYPOINT)
-	cp dist/$(PROJECT_NAME)/* $(INSTALL_DIR)/$(PROJECT_NAME)/ -r
-	ln -si $(INSTALL_DIR)/$(PROJECT_NAME)/$(PROJECT_NAME) $(LINK_DIR)/$(PROJECT_NAME)
-
-install-unstable: setup-dev format
-	$(PR) pyinstaller $(ENTRYPOINT)
-	cp dist/$(PROJECT_NAME)/* $(INSTALL_DIR)/$(PROJECT_NAME)/ -r
-	ln -si $(INSTALL_DIR)/$(PROJECT_NAME)/$(PROJECT_NAME) $(LINK_DIR)/$(PROJECT_NAME)
+install-unstable: format build copy
 
 setup:
 	poetry install --no-dev
@@ -28,5 +26,16 @@ format: setup-dev
 	$(PR) isort .
 
 lint: setup-dev
-	$(PR) mypy --install-types
-	$(PR) mypy . --namespace-packages --explicit-package-bases
+	MYPYPATH=src \
+			 $(PR) mypy \
+			 src \
+			 --namespace-packages \
+			 --explicit-package-bases \
+			 --install-types
+
+build: setup-dev
+	$(PR) pyinstaller $(ENTRYPOINT)
+
+copy:
+	cp dist/$(PROJECT_NAME)/* $(INSTALL_DIR)/ -r
+	ln -si $(INSTALL_DIR)/$(PROJECT_NAME) $(LINK_DIR)/$(PROJECT_NAME)
