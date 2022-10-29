@@ -108,15 +108,16 @@ def overwrite_to_file(filepath: str, text: str) -> int:
 def read_file_lines(filepath: str) -> List[str]:
     """Read contents of `filepath` as a list of strings
     or empty list if no file exists."""
-    lines = []
-    
+    lines: List[str] = []
+
     try:
         with open(filepath, "r") as f:
-            lines: List[str] = f.readlines()
+            lines = f.readlines()
     except FileNotFoundError as e:
         pass
 
     return lines
+
 
 def read_rotate_file(identifier: str) -> int:
     """Read `identifier`.rotate for the current log index"""

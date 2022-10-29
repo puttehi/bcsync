@@ -20,7 +20,9 @@ class Printer:
         if over_amount > 0:
             cls.log = cls.log[over_amount:]  # remove start lines
 
-        cls.log += str(*args)
+        cls.log += " ".join(
+            [str(a) for a in args]
+        )  # space is default behaviour of print i.e. what we printed
         cls.log_lines += line_count
 
         cls.line_count += line_count
