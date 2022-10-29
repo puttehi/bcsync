@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "bcsync"
-version = "0.4.5"
+version = "0.4.6"
 description = "Sync Rocket League replays to ballchasing.com"
 authors = ["puttehi <peteeez95@gmail.com>"]
 
