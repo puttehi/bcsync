@@ -23,10 +23,9 @@ def remove_duplicate_lines_from_file(filepath: str) -> int:
             print(f"No duplicates to clean as file does not exist: {filepath}")
         return total_bytes_written
 
-    with open(filepath, "r") as f:
-        lines = f.readlines()
-        for l in lines:
-            uniques.add(l)
+    lines = read_file_lines(filepath)
+    for l in lines:
+        uniques.add(l)
 
     if Config.verbosity > 1:
         print(f"Cleaning up {basename}: {lines}")
@@ -105,6 +104,19 @@ def overwrite_to_file(filepath: str, text: str) -> int:
 
     return total_bytes
 
+
+def read_file_lines(filepath: str) -> List[str]:
+    """Read contents of `filepath` as a list of strings
+    or empty list if no file exists."""
+    lines = []
+    
+    try:
+        with open(filepath, "r") as f:
+            lines: List[str] = f.readlines()
+    except FileNotFoundError as e:
+        pass
+
+    return lines
 
 def read_rotate_file(identifier: str) -> int:
     """Read `identifier`.rotate for the current log index"""

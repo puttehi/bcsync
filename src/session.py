@@ -87,7 +87,6 @@ class Session:
 
         runs = ""
         basename_col_width = 10
-        padding = basename_col_width * 4
         pad_char = "."
         for run_result in cls.run_results:
             rows = []
@@ -140,11 +139,8 @@ class Session:
     @classmethod
     def write_report_to_file(cls) -> None:
         """Write session report to `Config.session_log_file_identifier`.log"""
-        head = cls.create_header_table()
-        body = cls.create_report_body()
-
-        log = f"{head}\n{body}"
-
-        write_rotated_log(identifier=Config.session_log_file_identifier, text=log)
+        write_rotated_log(
+            identifier=Config.session_log_file_identifier, text=Printer.log
+        )
 
         return

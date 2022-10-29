@@ -1,5 +1,8 @@
 class Printer:
     line_count: int = 0
+    log = ""
+    log_max_lines = 1000
+    log_lines = 0
 
     @classmethod
     def print(cls, *args, **kwargs) -> None:
@@ -11,6 +14,15 @@ class Printer:
             else:
                 line_count += 1
         print(*args, **kwargs)
+
+        expected_lines = cls.log_lines + line_count
+        over_amount = expected_lines - cls.log_max_lines
+        if over_amount > 0:
+            cls.log = cls.log[over_amount:]  # remove start lines
+
+        cls.log += str(*args)
+        cls.log_lines += line_count
+
         cls.line_count += line_count
 
     @classmethod

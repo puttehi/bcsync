@@ -3,7 +3,7 @@ SHELL:=/bin/bash
 # Project settings
 PROJECT_NAME:=bcsync
 ENTRYPOINT:=src/$(PROJECT_NAME).py
-
+SCRIPT_ARGS:=$(args)
 # Install dir
 INSTALL_DIR:=~/$(PROJECT_NAME)
 LINK_DIR:=~/bin
@@ -12,6 +12,9 @@ LINK_DIR:=~/bin
 PR:=poetry run
 MP:=MYPYPATH=src $(PR) mypy src
 QUIET:=>> /dev/null 2>&1
+
+run: setup
+	$(PR) python $(ENTRYPOINT) --env=$$PWD/.env $(SCRIPT_ARGS)
 
 install: format lint clean build copy
 

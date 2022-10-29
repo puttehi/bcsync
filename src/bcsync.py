@@ -3,8 +3,6 @@ import datetime
 import glob
 import json
 import os
-import re
-import struct
 import sys
 import time
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
@@ -17,7 +15,7 @@ from common.config import Config
 from common.file_handlers import (append_to_file, find_files_endswith,
                                   overwrite_to_file,
                                   remove_duplicate_lines_from_file,
-                                  write_rotated_log)
+                                  write_rotated_log, read_file_lines)
 from common.printer import Printer
 
 print = Printer.print
@@ -103,15 +101,10 @@ def read_args() -> Tuple[argparse.Namespace, int]:
         "-w",
         "--watch",
         help="Watch for uploads every N seconds. Or use '1 s', '1 m' 1 h'",
-        default=0,
+        default="0",
     )
 
     args = parser.parse_args()
-    if not args.version and args.env is None and args.token is None:
-        print(
-            "You must pass in --env or --token to authenticate with the ballchasing.com API: https://ballchasing.com/doc/api"
-        )
-        return args, ERR_USAGE
 
     return args, SUCCESS
 
@@ -127,8 +120,7 @@ def read_env(filepath: str | None) -> Dict[str, str]:
     if filepath is None:
         return env
 
-    with open(filepath, "r") as f:
-        lines: List[str] = f.readlines()
+    lines = read_file_lines(filepath)
 
     for l in lines:
         # KEY=VALUE
@@ -190,10 +182,16 @@ def parse_watch(watch: str) -> int:
     return w
 
 
-def update_config(args: argparse.Namespace, env: dict[str, str]) -> None:
-    """Update Config variables"""
+def update_config(
+        args: argparse.Namespace, env: dict[str, str], working_directory: str, api_token: str, replay_path: str
+) -> None:
+    """Update Config variables.
+    Overrides API_TOKEN and REPLAY_PATH in order (right wins over left):
+        .env -> ENV=VAR -> --arg
+    if they are given i.e. not None"""
+
     Config.set_verbosity(args.verbosity)
-    Config.set_working_directory(os.path.dirname(__file__))
+    Config.set_working_directory(working_directory)
     Config.set_duplicates_file(
         os.path.join(Config.working_directory, "known_duplicates.db")
     )
@@ -201,15 +199,13 @@ def update_config(args: argparse.Namespace, env: dict[str, str]) -> None:
     Config.set_print_viewer_url(args.print_viewer_url)
 
     Config.set_api_token(
-        apply_overrides(env["API_TOKEN"], [os.getenv("API_TOKEN", None), args.token])
+       api_token 
     )
     Config.set_replay_path(
-        apply_overrides(
-            env["REPLAY_PATH"], [os.getenv("REPLAY_PATH", None), args.replay_path]
-        ).strip()
+        replay_path.strip()
     )
 
-    if Config.verbosity > 0:
+    if Config.verbosity > 1:
         print(f"config={str(vars(Config))}")
         print(f"{env=}")
         print(f"{args=}")
@@ -221,32 +217,56 @@ def main() -> int:
         exit_code (int): Exit code (0 = success, 1 = error, 2 = usage, ...)
     """
     exit_code = 0
+
+    Session.run_results = []
+
     args, exit_code = read_args()
     if exit_code != 0:
         return exit_code
+
+    working_directory = os.path.dirname(__file__)
+    dotenv_path = args.env
+    if dotenv_path is None:
+        dotenv_path = os.path.join(working_directory, ".env")
 
     if args.version == True:
         print(f"* {'bcsync --version:':*^24}")
         print(f"{__version__.strip() + ' ':*^24}")
         print(f"* Suggestion: Try bcsync --help")
-        return exit_code
+        print(dotenv_path, working_directory, args, exit_code)
+        return SUCCESS
 
-    env: Dict[str, str] = read_env(args.env)
-    update_config(args=args, env=env)
+    env: Dict[str, str] = read_env(dotenv_path)
+    api_token = apply_overrides(
+            env.get("API_TOKEN", None), [os.getenv("API_TOKEN", None), args.token]
+        )
+    replay_path = apply_overrides(
+            env.get("REPLAY_PATH", None),
+            [os.getenv("REPLAY_PATH", None), args.replay_path],
+        )
+    got_api_token = api_token is not None
+    got_replay_path = replay_path is not None
+    if not got_api_token or not got_replay_path:
+        print(
+            f"API_TOKEN or REPLAY_PATH is not set. Did you forget to create an .env file in script root or point to one with --env?"
+        )
+        return ERR_USAGE
+    
+    update_config(args=args, env=env, working_directory=working_directory,api_token=api_token,replay_path=replay_path)
 
-    # keep headers through session
+    # keep headers through requests session
     Session.session = requests.Session()
     Session.session.headers.update({"Authorization": Config.api_token})
-    Session.run_results = []
 
     while True:
         clear_lines()
+        health = False
         try:
             health = ballchasing_api.health_check(Session.session)
         except requests.exceptions.ConnectionError:
             pass
         finally:
-            if not health:
+            if health is False:
                 print(f"API health check failed. Retrying after 30 seconds.")
                 time.sleep(30)
                 continue
@@ -257,7 +277,6 @@ def main() -> int:
             for r in find_files_endswith(dirpath=Config.replay_path, ending=".replay")
         ]
         _replays = replays  # cache for logging
-        status_length = 36
         # upload
         run_result: RunResult = {
             "timestamp": datetime.datetime.now(),
@@ -276,10 +295,10 @@ def main() -> int:
                 run_result["replaydatas"].append(rd)
 
         Session.update_session_statistics(replays=replays, run_result=run_result)
-        clear_lines()
-        if not args.check:
-            Session.print_header()
-            Session.print_body()
+
+        # clear_lines()
+        Session.print_header()
+        Session.print_body()
 
         # clean up dupe file of dupes in case we got any
         written_bytes = remove_duplicate_lines_from_file(
@@ -340,10 +359,14 @@ def main_wrapper() -> int:
     exit_code = 0
     try:
         exit_code = main()
-    except KeyboardInterrupt or Exception as e:
-        Session.write_report_to_file()
-    finally:
         return exit_code
+    except KeyboardInterrupt as e:
+        Session.write_report_to_file()
+        return exit_code
+    except Exception as e:
+        Session.write_report_to_file()
+        print(str(e))
+        raise e
 
 
 _replays: List[Replay] = []
