@@ -9,6 +9,7 @@ import ballchasing_api
 from ballchasing_api import BaseResult
 from common.config import Config
 from common.printer import Printer
+from common.string_manip import truncate_string
 
 print = Printer.print
 
@@ -37,6 +38,11 @@ class Replay:
                 print(f"Skipping known duplicate: {self.basename}")
             return None
 
+        status_length = 28
+        if Config.verbosity == 0:
+            request_log = f"Out: {self.basename}"
+            print(truncate_string(request_log, status_length), end="\r")
+
         upload_result = ballchasing_api.upload_replay(
             s=session, file_={"file": open(self.path, "rb")}, visibility=self.visibility
         )
@@ -53,6 +59,12 @@ class Replay:
             "url": url,
             "watch_url": f"{url}#watch",
         }
+
+        if Config.verbosity > 0:
+            result = replay_data["result"]
+            basename = replay_data["basename"]
+            response_log = f"In: {result} {basename}\n"
+            print(truncate_string(response_log, status_length))
 
         return replay_data
 

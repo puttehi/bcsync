@@ -339,22 +339,8 @@ def upload_replay(replay: Replay, max_line_length=26) -> Union[ReplayData, None]
     """Upload a Replay"""
     if Session.session is None:
         raise ValueError("No requests.Session set to Session.session")
-    if Config.verbosity == 0:
-        basename = replay.basename
-        request_log = f"Out: {basename}"
-        print(truncate_string(request_log, max_line_length), end="\r")
-    rd: Optional[ReplayData] = replay.upload(Session.session)  # <-- slow
-    if rd is None:
-        # known duplicate, upload skipped
-        return None
 
-    if Config.verbosity > 0:
-        result = rd["result"]
-        basename = rd["basename"]
-        response_log = f"In: {result} {basename}\n"
-        print(truncate_string(response_log, max_line_length))
-
-    return rd
+    return replay.upload(Session.session)  # <-- slow
 
 
 def main_wrapper() -> int:
