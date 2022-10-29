@@ -13,9 +13,9 @@ from tabulate import tabulate
 import ballchasing_api
 from common.config import Config
 from common.file_handlers import (append_to_file, find_files_endswith,
-                                  overwrite_to_file,
+                                  overwrite_to_file, read_file_lines,
                                   remove_duplicate_lines_from_file,
-                                  write_rotated_log, read_file_lines)
+                                  write_rotated_log)
 from common.printer import Printer
 
 print = Printer.print
@@ -183,7 +183,11 @@ def parse_watch(watch: str) -> int:
 
 
 def update_config(
-        args: argparse.Namespace, env: dict[str, str], working_directory: str, api_token: str, replay_path: str
+    args: argparse.Namespace,
+    env: dict[str, str],
+    working_directory: str,
+    api_token: str,
+    replay_path: str,
 ) -> None:
     """Update Config variables.
     Overrides API_TOKEN and REPLAY_PATH in order (right wins over left):
@@ -198,12 +202,8 @@ def update_config(
     Config.set_watch(parse_watch(args.watch))
     Config.set_print_viewer_url(args.print_viewer_url)
 
-    Config.set_api_token(
-       api_token 
-    )
-    Config.set_replay_path(
-        replay_path.strip()
-    )
+    Config.set_api_token(api_token)
+    Config.set_replay_path(replay_path.strip())
 
     if Config.verbosity > 1:
         print(f"config={str(vars(Config))}")
@@ -233,17 +233,16 @@ def main() -> int:
         print(f"* {'bcsync --version:':*^24}")
         print(f"{__version__.strip() + ' ':*^24}")
         print(f"* Suggestion: Try bcsync --help")
-        print(dotenv_path, working_directory, args, exit_code)
         return SUCCESS
 
     env: Dict[str, str] = read_env(dotenv_path)
     api_token = apply_overrides(
-            env.get("API_TOKEN", None), [os.getenv("API_TOKEN", None), args.token]
-        )
+        env.get("API_TOKEN", None), [os.getenv("API_TOKEN", None), args.token]
+    )
     replay_path = apply_overrides(
-            env.get("REPLAY_PATH", None),
-            [os.getenv("REPLAY_PATH", None), args.replay_path],
-        )
+        env.get("REPLAY_PATH", None),
+        [os.getenv("REPLAY_PATH", None), args.replay_path],
+    )
     got_api_token = api_token is not None
     got_replay_path = replay_path is not None
     if not got_api_token or not got_replay_path:
@@ -251,8 +250,14 @@ def main() -> int:
             f"API_TOKEN or REPLAY_PATH is not set. Did you forget to create an .env file in script root or point to one with --env?"
         )
         return ERR_USAGE
-    
-    update_config(args=args, env=env, working_directory=working_directory,api_token=api_token,replay_path=replay_path)
+
+    update_config(
+        args=args,
+        env=env,
+        working_directory=working_directory,
+        api_token=api_token,
+        replay_path=replay_path,
+    )
 
     # keep headers through requests session
     Session.session = requests.Session()
