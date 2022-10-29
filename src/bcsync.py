@@ -301,8 +301,6 @@ def main() -> int:
 
         Session.update_session_statistics(replays=replays, run_result=run_result)
 
-        # clear_lines()
-        Session.print_header()
         Session.print_body()
 
         # clean up dupe file of dupes in case we got any
