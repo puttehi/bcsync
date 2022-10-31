@@ -16,6 +16,9 @@ QUIET:=>> /dev/null 2>&1
 run: setup
 	$(PR) python $(ENTRYPOINT) --env=$$PWD/.env $(SCRIPT_ARGS)
 
+run-dev: setup-dev
+	$(PR) python $(ENTRYPOINT) --env=$$PWD/.env $(SCRIPT_ARGS)
+
 install: format lint clean build copy
 
 install-unstable: format build copy

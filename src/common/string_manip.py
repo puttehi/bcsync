@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 """Common string manipulation functions"""
+import textwrap
+from math import floor
+from typing import Union
 
 
 def truncate_path_between(input_path: str, start_length=3, end_length=2) -> str:
@@ -24,6 +27,13 @@ def truncate_string(string: str, length=24, ending="...") -> str:
     return string[: min(length, len(string)) - len(ending)] + ending
 
 
+def wrap_and_truncate_string(string: str, ending="...", lines=0, columns=0) -> str:
+    """Wrap string to `lines` fitting in `columns`, truncating the rest with `ending`"""
+    wrapped = textwrap.wrap(string, columns)[:lines]
+    wrapped[-1] = truncate_string(string=wrapped[-1], length=columns)
+    return "\n".join(wrapped)
+
+
 def center_pad_string(
     string: str, line_length: int, ws_pad_count=4, pad_char=" "
 ) -> str:
@@ -40,3 +50,11 @@ def center_pad_string(
     char_padded = "{s:{c}^{n}}\n".format(s=ws_padded, c=pad_char, n=line_length)
 
     return char_padded
+
+
+def seconds_to_mm_ss(seconds: Union[str, int]) -> str:
+    """Convert `seconds` to MM:SS"""
+    int(seconds)
+    minutes = floor(seconds / 60)
+    remainder = seconds - (minutes * 60)
+    return f"{str(minutes).rjust(2, '0')}:{str(remainder).rjust(2, '0')}"

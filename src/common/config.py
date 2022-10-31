@@ -11,10 +11,12 @@ class Config:
     web_url = "https://ballchasing.com"
     api_url = f"{web_url}/api"
     upload_url = f"{api_url}/v2/upload"
+    replay_url = f"{api_url}/replays"
     duplicates_file = "known_duplicates.db"
     working_directory = ""
     session_log_file_identifier = "session"
     max_session_logfiles = 10
+    show_extended_results = False  # make additional api call for each replay metadata
 
     @classmethod
     def set_verbosity(cls, verbosity: int) -> None:
@@ -43,3 +45,7 @@ class Config:
     @classmethod
     def set_working_directory(cls, working_directory: str) -> None:
         cls.working_directory = working_directory
+
+    @classmethod
+    def set_show_extended_results(cls, show_extended_results: bool) -> None:
+        cls.show_extended_results = show_extended_results

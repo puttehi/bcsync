@@ -10,8 +10,9 @@ from typing import List, Tuple
 from tabulate import tabulate
 
 from common.file_handlers import write_rotated_log
-from common.string_manip import (center_pad_string, truncate_path_between,
-                                 truncate_string)
+from common.string_manip import (center_pad_string, seconds_to_mm_ss,
+                                 truncate_path_between, truncate_string,
+                                 wrap_and_truncate_string)
 from replay import Replay
 from runner import RunResult
 
@@ -81,52 +82,53 @@ class Session:
     def create_report_body(cls) -> str:
         """"""
         result_map = {
-            "success": "Uploaded: ",
-            "duplicate": "Already uploaded: ",
+            "success": " (new upload)",
+            "duplicate": " (already uploaded)",
         }
 
         runs = ""
         basename_col_width = 10
         pad_char = "."
+        ws_pad_count = 6
         for run_result in cls.run_results:
             rows = []
             for rd in run_result["replaydatas"]:
                 result = rd["result"]
-                id = rd["id"]
+                id_ = rd["id"]
                 # url = rd["url"]
-                watch_url = rd["watch_url"]
-                info = result_map.get(result, "") + id + "\n"
-                lines = 1
-                basename = ""
+                rows.append(("Filename", rd["basename"]))
+                rows.append(("Replay ID", id_ + result_map.get(result, "")))
                 if Config.print_viewer_url:
-                    info += watch_url
-                    lines += 1
-                    bn = rd["basename"]
-                    basename = (
-                        bn[:basename_col_width]
-                        + "\n"
-                        + truncate_string(
-                            bn[basename_col_width:],
-                            length=basename_col_width,
-                            ending="...",
+                    watch_url = rd["watch_url"]
+                    rows.append(("Watch URL", watch_url))
+                if Config.show_extended_results and rd.get("json", None) is not None:
+                    # : BaseReplayResult if status not "ok" | ReplayResult if status "ok"
+                    j = rd["json"]
+                    if j["status"] == "ok":
+                        rows.append(("Title", j.get("title", "Unknown title")))
+                        rows.append(("Played on", j.get("date", "Unknown date")))
+                        rows.append(
+                            ("Map", j.get("map_name", j.get("map_code", "Unknown map")))
                         )
-                    )
-                else:
-                    basename = truncate_string(
-                        rd["basename"], length=basename_col_width, ending="..."
-                    )
-                rows.append((basename, info))
+                        duration = seconds_to_mm_ss(j.get("duration", 0))
+                        if j["overtime"]:
+                            duration += (
+                                " (On OT: "
+                                + seconds_to_mm_ss(j["overtime_seconds"])
+                                + ")"
+                            )
+                        rows.append(("Duration", duration))
 
             table = tabulate(rows)
 
-            timestamp = str(run_result["timestamp"])
+            timestamp = run_result["timestamp"]
             report_length = len(table.split("\n")[0])
             body = (
                 center_pad_string(
                     string=str(timestamp),
                     line_length=report_length,
-                    ws_pad_count=6,
-                    pad_char=".",
+                    ws_pad_count=ws_pad_count,
+                    pad_char=pad_char,
                 )
                 + table
                 + "\n"

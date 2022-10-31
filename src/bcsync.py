@@ -80,6 +80,12 @@ def read_args() -> Tuple[argparse.Namespace, int]:
         action="store_true",
     )
     parser.add_argument(
+        "-P",
+        "--print_extended_information",
+        help="Make an extra request for each new replay to get replay data like map name, title, etc.",
+        action="store_true",
+    )
+    parser.add_argument(
         "-r",
         "--replay_path",
         help="Path to replay(s?) to upload",
@@ -201,7 +207,7 @@ def update_config(
     )
     Config.set_watch(parse_watch(args.watch))
     Config.set_print_viewer_url(args.print_viewer_url)
-
+    Config.set_show_extended_results(args.print_extended_information)
     Config.set_api_token(api_token)
     Config.set_replay_path(replay_path.strip())
 
