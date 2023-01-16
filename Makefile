@@ -23,6 +23,8 @@ install: format lint clean build copy
 
 install-unstable: format build copy
 
+install-clean-unstable: format clean build copy
+
 setup:
 	poetry install --no-dev
 
@@ -49,11 +51,11 @@ copy:
 	ln -si $(INSTALL_DIR)/$(PROJECT_NAME) $(LINK_DIR)/$(PROJECT_NAME)
 
 clean:
-	-@rm dist -r \
-		build -r \
-		out -r \
-		.mypy_cache -r \
-		__pycache__ -r \
+	-@rm dist/ -r \
+		build/ -r \
+		out/ -r \
+		.mypy_cache/ -r \
+		__pycache__/ -r \
 		*.spec \
 		src/log/ \
-		src/**/__pycache__ $(QUIET)
+		src/**/__pycache__/ $(QUIET)

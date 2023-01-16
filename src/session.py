@@ -104,20 +104,23 @@ class Session:
                 if Config.show_extended_results and rd.get("json", None) is not None:
                     # : BaseReplayResult if status not "ok" | ReplayResult if status "ok"
                     j = rd["json"]
-                    if j["status"] == "ok":
-                        rows.append(("Title", j.get("title", "Unknown title")))
-                        rows.append(("Played on", j.get("date", "Unknown date")))
-                        rows.append(
-                            ("Map", j.get("map_name", j.get("map_code", "Unknown map")))
+                    if j["status"] != "ok":
+                        rows.append(("Status", "Replay still pending, wait a bit"))
+                        continue
+
+                    rows.append(("Title", j.get("title", "Unknown title")))
+                    rows.append(("Played on", j.get("date", "Unknown date")))
+                    rows.append(
+                        ("Map", j.get("map_name", j.get("map_code", "Unknown map")))
+                    )
+                    duration = seconds_to_mm_ss(j.get("duration", 0))
+                    if j["overtime"]:
+                        duration += (
+                            " (On OT: "
+                            + seconds_to_mm_ss(j["overtime_seconds"])
+                            + ")"
                         )
-                        duration = seconds_to_mm_ss(j.get("duration", 0))
-                        if j["overtime"]:
-                            duration += (
-                                " (On OT: "
-                                + seconds_to_mm_ss(j["overtime_seconds"])
-                                + ")"
-                            )
-                        rows.append(("Duration", duration))
+                    rows.append(("Duration", duration))
 
             table = tabulate(rows)
 

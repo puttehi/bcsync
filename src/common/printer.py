@@ -9,8 +9,8 @@ class Printer:
         """print() something"""
         line_count = 0
         for a in args:
-            if type(a) is str:
-                line_count += a.count("\n")
+            if isinstance(a, str):
+                line_count += len(a.splitlines())
             else:
                 line_count += 1
         print(*args, **kwargs)
@@ -39,3 +39,4 @@ class Printer:
         clear_to_end = "\33[J"
         print(move_up + clear_to_end, end="\r")
         cls.line_count = 0
+
