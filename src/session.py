@@ -1,59 +1,72 @@
+from runner import RunResult
+from replay import Replay
+from string_manip import (center_pad_string, seconds_to_mm_ss,
+                                 truncate_path_between)
+from file_handlers import write_rotated_log
+from tabulate import tabulate
+from typing import List, TypedDict
+import datetime
 import requests
 
-from common.config import Config
-from common.printer import Printer
+from config import Config
+from printer import Printer
+from gui import GUI
 
 print = Printer.print
-import datetime
-from typing import List, Tuple
 
-from tabulate import tabulate
 
-from common.file_handlers import write_rotated_log
-from common.string_manip import (center_pad_string, seconds_to_mm_ss,
-                                 truncate_path_between, truncate_string,
-                                 wrap_and_truncate_string)
-from replay import Replay
-from runner import RunResult
+class SessionData(TypedDict):
+    # Historical/Totals
+    total_replays: int  # Total replays in ballchasing
+    total_duplicates: int  # Total duplicates
+    old_duplicates: int  # Total old duplicates that were skipped
+    # Session
+    new_uploads: int  # Total new uploads
+    new_duplicates: int  # Total new duplicate entries in local .db
+    # List of run results (where a request was sent)
+    run_results: List[RunResult]
 
 
 class Session:
-    # Historical/Totals
-    total_replays: int = 0  # Total replays in ballchasing
-    total_duplicates: int = 0  # Total duplicates
-    old_duplicates: int = 0  # Total old duplicates that were skipped
-    # Session
-    new_uploads: int = 0  # Total new uploads
-    new_duplicates: int = 0  # Total new duplicate entries in local .db
-    # body_log: str = "" # Session log (body text only)
-    run_results: List[RunResult]  # List of run results (where a request was sent)
-    session: requests.Session | None = None  # requests Session for keeping auth info
+    session_data: SessionData = {
+        "total_replays": 0,
+        "total_duplicates": 0,
+        "old_duplicates": 0,
+        "new_uploads": 0,
+        "new_duplicates": 0,
+        "run_results": []
+    }
+    # requests Session for keeping auth info
+    session: requests.Session | None = None
 
     @classmethod
     def update_session_statistics(
         cls, replays: List[Replay], run_result: RunResult
     ) -> None:
-        cls.new_uploads += len([r for r in replays if r.upload_result == "success"])
-        cls.old_duplicates = len(
-            [r for r in replays if r.upload_result == "" and r.duplicate is True]
+        cls.session_data["new_uploads"] += len(
+            [r for r in replays if r.upload_result == "success"])
+        cls.session_data["old_duplicates"] = len(
+            [r for r in replays if r.upload_result == ""
+             and r.duplicate is True]
         )
-        cls.new_duplicates += len(
+        cls.session_data["new_duplicates"] += len(
             [r for r in replays if r.upload_result == "duplicate"]
         )
 
-        cls.total_duplicates = cls.old_duplicates + cls.new_duplicates
-        cls.total_replays = cls.total_duplicates + cls.new_uploads
-
+        cls.session_data["total_duplicates"] = cls.session_data["old_duplicates"] + \
+            cls.session_data["new_duplicates"]
+        cls.session_data["total_replays"] = cls.session_data["total_duplicates"] + \
+            cls.session_data["new_uploads"]
         if len(run_result["replaydatas"]) > 0:
             # had upload attempts
-            cls.run_results.append(run_result)
+            cls.session_data["run_results"].append(run_result)
 
         return
 
     @classmethod
-    def print_header(cls):
+    def print_header(cls, gui: GUI):
         header = cls.create_header_table()
-        print(header)
+        gui.print(header)
 
     @classmethod
     def create_header_table(
@@ -66,17 +79,17 @@ class Session:
             [
                 ["Last synced on", timestamp],
                 ["Replay path", replay_path],
-                ["New uploads", cls.new_uploads],
-                ["New duplicates", cls.new_duplicates],
-                ["Total replays", cls.total_replays],
+                ["New uploads", cls.session_data["new_uploads"]],
+                ["New duplicates", cls.session_data["new_duplicates"]],
+                ["Total replays", cls.session_data["total_replays"]],
             ]
         )
 
     @classmethod
-    def print_body(cls):
+    def print_body(cls, gui: GUI):
         """"""
         body = cls.create_report_body()
-        print(body)
+        gui.print(body)
 
     @classmethod
     def create_report_body(cls) -> str:
@@ -90,7 +103,7 @@ class Session:
         basename_col_width = 10
         pad_char = "."
         ws_pad_count = 6
-        for run_result in cls.run_results:
+        for run_result in cls.session_data["run_results"]:
             rows = []
             for rd in run_result["replaydatas"]:
                 result = rd["result"]
@@ -106,7 +119,8 @@ class Session:
                     j = rd["json"]
                     if j["status"] == "ok":
                         rows.append(("Title", j.get("title", "Unknown title")))
-                        rows.append(("Played on", j.get("date", "Unknown date")))
+                        rows.append(
+                            ("Played on", j.get("date", "Unknown date")))
                         rows.append(
                             ("Map", j.get("map_name", j.get("map_code", "Unknown map")))
                         )

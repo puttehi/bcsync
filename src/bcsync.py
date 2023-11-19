@@ -1,37 +1,30 @@
+from session import Session
+from runner import RunResult
+from replay import Replay, ReplayData
 import argparse
 import datetime
-import glob
-import json
 import os
 import sys
 import time
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
-
+import gui
+import terminalgui
+import webgui
 import requests
-from tabulate import tabulate
-
+from typing import Dict, Tuple, List, Union, Any
 import ballchasing_api
-from common.config import Config
-from common.file_handlers import (append_to_file, find_files_endswith,
-                                  overwrite_to_file, read_file_lines,
-                                  remove_duplicate_lines_from_file,
-                                  write_rotated_log)
-from common.printer import Printer
+from config import Config
+from file_handlers import (append_to_file, find_files_endswith,
+                                  read_file_lines,
+                                  remove_duplicate_lines_from_file)
 
-print = Printer.print
-clear_lines = Printer.clear_lines
-from common.string_manip import truncate_path_between, truncate_string
-from replay import Replay, ReplayData
-from runner import RunResult
-from session import Session
 
 __version__ = ""
 with open("pyproject.toml", "r") as f:
     while not "[tool.poetry]" in f.readline():
         pass
-    while l := f.readline():
-        __version__ += l
-        if l.startswith("\n") or l.startswith("["):
+    while line := f.readline():
+        __version__ += line
+        if line.startswith("\n") or line.startswith("["):
             break
 
 
@@ -109,6 +102,13 @@ def read_args() -> Tuple[argparse.Namespace, int]:
         help="Watch for uploads every N seconds. Or use '1 s', '1 m' 1 h'",
         default="0",
     )
+    parser.add_argument(
+        "-g",
+        "--gui",
+        help="Run and open web GUI (non-TUI mode)?",
+        default=False,
+        action="store_true"
+    )
 
     args = parser.parse_args()
 
@@ -132,21 +132,10 @@ def read_env(filepath: str | None) -> Dict[str, str]:
         # KEY=VALUE
         delimiter_index = l.find("=")
         key = l[:delimiter_index]
-        value = l[delimiter_index + 1 :].strip()
+        value = l[delimiter_index + 1:].strip()
         env[key] = value
 
     return env
-
-
-def print_replay_attributes(replay: Replay) -> str:
-    """Print Replay object attributes and return the printed string."""
-    printed = f"{'8<':-^20}\n"
-    printed += str(vars(replay)) + "\n"
-    printed += f"{'>8':-^20}\n"
-    print(printed)
-
-    return printed
-
 
 def apply_overrides(suggested: Any, overrides: List[Any]) -> str:
     """Overrides `suggested` with values from `overrides` in order but skips values that are `None`.
@@ -269,8 +258,18 @@ def main() -> int:
     Session.session = requests.Session()
     Session.session.headers.update({"Authorization": Config.api_token})
 
+    gui: gui.GUI = None
+
+    if args.gui:
+        gui = webgui.WebGUI()
+    else:
+        gui = gui.TerminalGUI()
+
+    gui.build()
+    gui.run()
+
     while True:
-        clear_lines()
+        gui.clear_lines()
         health = False
         try:
             health = ballchasing_api.health_check(Session.session)
@@ -278,7 +277,7 @@ def main() -> int:
             pass
         finally:
             if health is False:
-                print(f"API health check failed. Retrying after 30 seconds.")
+                gui.print(f"API health check failed. Retrying after 30 seconds.")
                 time.sleep(30)
                 continue
 
@@ -296,25 +295,26 @@ def main() -> int:
 
         if args.check:
             for replay in replays:
-                print_replay_attributes(replay)
+                gui.print_replay_attributes(replay)
                 return SUCCESS
 
-        Session.print_header()
+        Session.print_header(gui)
         for replay in replays:
             rd = handle_replay(replay)
             if rd is not None:
                 run_result["replaydatas"].append(rd)
 
-        Session.update_session_statistics(replays=replays, run_result=run_result)
+        Session.update_session_statistics(
+            replays=replays, run_result=run_result)
 
-        Session.print_body()
+        Session.print_body(gui)
 
         # clean up dupe file of dupes in case we got any
         written_bytes = remove_duplicate_lines_from_file(
             filepath=Config.duplicates_file
         )
         if Config.verbosity > 1:
-            print(
+            gui.print(
                 f"Wrote {written_bytes} bytes to duplicates file {Config.duplicates_file}"
             )
 

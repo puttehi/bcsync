@@ -1,14 +1,12 @@
-from typing import IO, Any, Dict, Literal, Mapping, TypedDict, Union
+from typing import IO, Any, Dict, Literal, Mapping, TypedDict, Union, Optional
 
 import requests
-
-from common.config import Config
-from common.printer import Printer
-
-print = Printer.print
+from gui import GUI
+from config import Config
+from printer import Printer
 
 
-def health_check(s: requests.Session) -> bool:
+def health_check(s: requests.Session, gui: Optional[GUI]) -> bool:
     """Ping the ballchasing.com API.
     Returns:
         (bool): Healthy?"""
@@ -16,10 +14,10 @@ def health_check(s: requests.Session) -> bool:
     # health check
     ping = s.get(f"{Config.api_url}/")
     healthy = ping.status_code == 200
-    if healthy and Config.verbosity > 1:
-        print("API health check OK")
-    elif not healthy and Config.verbosity > 1:
-        print(f"API health check failed: {ping.status_code}")
+    if healthy and Config.verbosity > 1 and gui is not None:
+        gui.print("API health check OK")
+    elif not healthy and Config.verbosity > 1 and gui is not None:
+        gui.print(f"API health check failed: {ping.status_code}")
 
     return healthy
 
@@ -58,7 +56,7 @@ class UploadResult(BaseResult):
 
 
 def upload_replay(
-    s: requests.Session, file_: Mapping[str, IO], visibility: str = "private"
+        s: requests.Session, file_: Mapping[str, IO], visibility: str = "private", gui: Optional[GUI] = None
 ) -> UploadResult:
     """Upload a replay `file_` to ballchasing.com
     Returns:
@@ -80,18 +78,18 @@ def upload_replay(
         result["json"] = js
         result["result"] = "success"
         result["id"] = js["id"]
-        if Config.verbosity > 0:
+        if Config.verbosity > 0 and gui is not None:
             id_ = result["id"]
-            print(f"Upload successful. Replay ID: {id_}")
+            gui.print(f"Upload successful. Replay ID: {id_}")
     # existing duplicate found
     elif upload.status_code == 409:
         jd: UploadDuplicateResponse = upload.json()
         result["json"] = jd
         result["result"] = "duplicate"
         result["id"] = jd["id"]
-        if Config.verbosity > 0:
+        if Config.verbosity > 0 and gui is not NOne:
             id_ = result["id"]
-            print(f"Duplicate replay found. Replay ID: {id_}")
+            gui.print(f"Duplicate replay found. Replay ID: {id_}")
 
     return result
 

@@ -2,15 +2,13 @@
 """File handling functions for bcsync"""
 import glob
 import os
-from typing import Any, Callable, List
+from typing import Any, Callable, List, Optional
 
-from common.config import Config
-from common.printer import Printer
-
-print = Printer.print
+from config import Config
+from gui import GUI
 
 
-def remove_duplicate_lines_from_file(filepath: str) -> int:
+def remove_duplicate_lines_from_file(filepath: str, gui: Optional[GUI] = None) -> int:
     """Clean up the file in `filepath` from duplicate lines.
     Returns:
         (int): Total bytes written back to `filepath`"""
@@ -19,22 +17,22 @@ def remove_duplicate_lines_from_file(filepath: str) -> int:
     exists = os.path.exists(filepath)
     total_bytes_written = 0
     if not exists:
-        if Config.verbosity > 0:
-            print(f"No duplicates to clean as file does not exist: {filepath}")
+        if Config.verbosity > 0 and gui is not None:
+            gui.print(f"No duplicates to clean as file does not exist: {filepath}")
         return total_bytes_written
 
     lines = read_file_lines(filepath)
     for l in lines:
         uniques.add(l)
 
-    if Config.verbosity > 1:
-        print(f"Cleaning up {basename}: {lines}")
+    if Config.verbosity > 1 and gui is not None:
+        gui.print(f"Cleaning up {basename}: {lines}")
     uniques_list = list(uniques)
     total_bytes_written += overwrite_to_file(filepath, uniques_list[0])
     for u in uniques_list[1:]:
         total_bytes_written += append_to_file(filepath, u)
-    if Config.verbosity > 1:
-        print(
+    if Config.verbosity > 1 and gui is not None:
+        gui.print(
             f"Wrote {len(uniques_list)} unique rows ({total_bytes_written} bytes) to {basename}: {str(uniques_list)}"
         )
 
@@ -143,7 +141,7 @@ def get_next_rotate_index(identifier: str) -> int:
         return 0
 
 
-def write_rotated_log(identifier: str, text: str) -> None:
+def write_rotated_log(identifier: str, text: str, gui: Optional[GUI]) -> None:
     """Write session log to `identifier`.logN
     where N is the next log index determined
     from `identifier`.rotate storing the current
@@ -159,7 +157,8 @@ def write_rotated_log(identifier: str, text: str) -> None:
         log_file += str(next_index)
 
     written_bytes = overwrite_to_file(filepath=log_file, text=text)
-    print(text)
-    print(f"Wrote {written_bytes} bytes to {log_file}")
+    if gui is not None:
+        gui.print(text)
+        gui.print(f"Wrote {written_bytes} bytes to {log_file}")
 
     write_rotate_file(identifier=identifier, index=next_index)

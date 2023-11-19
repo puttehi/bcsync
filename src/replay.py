@@ -3,16 +3,13 @@
 import os
 from typing import List, Literal, TypedDict, Union
 
+from gui import GUI
 import requests
 
 import ballchasing_api
 from ballchasing_api import BaseReplayResult, BaseResult, ReplayResult
-from common.config import Config
-from common.printer import Printer
-from common.string_manip import truncate_string
-
-print = Printer.print
-
+from config import Config
+from string_manip import truncate_string
 
 class ReplayData(BaseResult):
     basename: str
@@ -38,18 +35,18 @@ class Replay:
         self.upload_json = {}
 
     def upload(
-        self, session: requests.Session
+            self, session: requests.Session, gui: Optional[GUI] = None
     ) -> Union[ReplayData, ExtendedReplayData, None]:
         """Upload the replay to ballchasing.com."""
         if self.duplicate:
-            if Config.verbosity > 0:
-                print(f"Skipping known duplicate: {self.basename}")
+            if Config.verbosity > 0 and gui is not None:
+                gui.print(f"Skipping known duplicate: {self.basename}")
             return None
 
         status_length = 28
-        if Config.verbosity == 0:
+        if Config.verbosity == 0 and gui is not None:
             request_log = f"Out: {self.basename}"
-            print(truncate_string(request_log, status_length), end="\r")
+            gui.print(truncate_string(request_log, status_length), end="\r")
 
         upload_result = ballchasing_api.upload_replay(
             s=session, file_={"file": open(self.path, "rb")}, visibility=self.visibility
@@ -82,11 +79,11 @@ class Replay:
             }
             ret = extended_rd
 
-        if Config.verbosity > 0:
+        if Config.verbosity > 0 and gui is not None:
             result = ret["result"]
             basename = ret["basename"]
             response_log = f"In: {result} {basename}\n"
-            print(truncate_string(response_log, status_length))
+            gui.print(truncate_string(response_log, status_length))
 
         return ret
 
